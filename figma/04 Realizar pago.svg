@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="400" height="400" viewBox="0 0 400 400">
+<title>04 Realizar pago</title>
+<rect id="Fondo" x="0" y="0" width="400" height="400" fill="#C6D9E3"/>
+<text id="Realizar pago" x="73" y="50" font-family="Arial" font-size="40.00" font-weight="bold" fill="#000000">Realizar pago</text>
+<text id="Total a pagar C 20525" x="83" y="121" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Total a pagar: C$ 205.25</text>
+<text id="Ingrese el monto pagado" x="83" y="181" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Ingrese el monto pagado:</text>
+<g id="Campo de texto">
+<rect id="Caja" x="80.5" y="210.5" width="239" height="39" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="300" x="85" y="237" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">300</text>
+</g>
+<g id="Botón Confirmar pago">
+<rect id="Fondo botón" x="80.5" y="270.5" width="239" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo" x="81" y="271" width="238" height="1" fill="#FFFFFF"/>
+<text id="Confirmar pago" x="127.5" y="297" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Confirmar pago</text>
+</g>
+</svg>

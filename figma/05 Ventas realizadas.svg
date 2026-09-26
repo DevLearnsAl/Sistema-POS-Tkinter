@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1100" height="650" viewBox="0 0 1100 650">
+<title>05 Ventas realizadas</title>
+<rect id="Fondo" x="0" y="0" width="1100" height="650" fill="#C6D9E3"/>
+<text id="Ventas realizadas" x="353" y="55" font-family="Arial" font-size="34.67" font-weight="bold" fill="#000000">Ventas realizadas</text>
+<g id="Contenedor">
+<rect id="Fondo contenedor" x="20" y="60" width="1060" height="60" fill="#C6D9E3"/>
+<text id="Número de factura" x="33" y="96" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Número de factura</text>
+<g id="Campo de texto">
+<rect id="Caja" x="220.5" y="70.5" width="199" height="39" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+</g>
+<text id="Cliente" x="443" y="96" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Cliente</text>
+<g id="Campo de texto 2">
+<rect id="Caja 2" x="640.5" y="70.5" width="199" height="39" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+</g>
+<g id="Botón Filtrar">
+<rect id="Fondo botón" x="860.5" y="70.5" width="72" height="38" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo" x="861" y="71" width="71" height="1" fill="#FFFFFF"/>
+<text id="Filtrar" x="869" y="96.5" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Filtrar</text>
+</g>
+</g>
+<g id="Contenedor 2">
+<rect id="Fondo contenedor 2" x="20" y="130" width="1060" height="500" fill="#FFFFFF"/>
+<g id="Barra de desplazamiento">
+<rect id="Canal" x="1065.5" y="130.5" width="14" height="499" fill="#E6E6E6" stroke="#B8B8B8" stroke-width="1"/>
+<rect id="Deslizador" x="1068" y="148" width="9" height="464" fill="#C2C2C2"/>
+</g>
+<g id="Barra de desplazamiento 2">
+<rect id="Canal 2" x="20.5" y="615.5" width="1044" height="14" fill="#E6E6E6" stroke="#B8B8B8" stroke-width="1"/>
+<rect id="Deslizador 2" x="38" y="618" width="1009" height="9" fill="#C2C2C2"/>
+</g>
+<g id="Tabla">
+<rect id="Fondo tabla" x="20" y="130" width="1045" height="485" fill="#FFFFFF"/>
+<g id="Encabezados">
+<rect id="Encabezado Factura" x="20.5" y="130.5" width="101" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Factura" x="51.5" y="148" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Factura</text>
+<rect id="Encabezado Cliente" x="122.5" y="130.5" width="161" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Cliente 2" x="184.5" y="148" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Cliente</text>
+<rect id="Encabezado Producto" x="284.5" y="130.5" width="161" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Producto" x="340.5" y="148" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Producto</text>
+<rect id="Encabezado Precio" x="446.5" y="130.5" width="122" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Precio" x="491" y="148" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Precio</text>
+<rect id="Encabezado Cantidad" x="569.5" y="130.5" width="122" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Cantidad" x="606.5" y="148" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Cantidad</text>
+<rect id="Encabezado Total" x="692.5" y="130.5" width="122" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Total" x="740" y="148" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Total</text>
+<rect id="Encabezado Fecha" x="815.5" y="130.5" width="122" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Fecha" x="861" y="148" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Fecha</text>
+<rect id="Encabezado Hora" x="938.5" y="130.5" width="122" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Hora" x="986.5" y="148" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Hora</text>
+</g>
+<g id="Fila 1">
+<text id="1" x="70" y="171.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">1</text>
+<text id="Consumidor final" x="159" y="171.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Consumidor final</text>
+<text id="Arroz 1 lb" x="342" y="171.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Arroz 1 lb</text>
+<text id="1875" x="496" y="171.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">18.75</text>
+<text id="2" x="629.5" y="171.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">2</text>
+<text id="3750" x="742" y="171.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">37.50</text>
+<text id="25092026" x="849.5" y="171.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">25-09-2026</text>
+<text id="173522" x="980.5" y="171.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">17:35:22</text>
+</g>
+<g id="Fila 2">
+<text id="1 2" x="70" y="191.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">1</text>
+<text id="Consumidor final 2" x="159" y="191.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Consumidor final</text>
+<text id="Azúcar 1 lb" x="338" y="191.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Azúcar 1 lb</text>
+<text id="1600" x="496" y="191.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">16.00</text>
+<text id="1 3" x="629.5" y="191.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">1</text>
+<text id="1600 2" x="742" y="191.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">16.00</text>
+<text id="25092026 2" x="849.5" y="191.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">25-09-2026</text>
+<text id="173522 2" x="980.5" y="191.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">17:35:22</text>
+</g>
+<g id="Fila 3">
+<text id="2 2" x="70" y="211.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">2</text>
+<text id="María López" x="173" y="211.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">María López</text>
+<text id="Leche entera 1 L" x="324.5" y="211.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Leche entera 1 L</text>
+<text id="3850" x="496" y="211.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">38.50</text>
+<text id="2 3" x="629.5" y="211.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">2</text>
+<text id="7700" x="742" y="211.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">77.00</text>
+<text id="25092026 3" x="849.5" y="211.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">25-09-2026</text>
+<text id="173522 3" x="980.5" y="211.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">17:35:22</text>
+</g>
+</g>
+</g>
+</svg>

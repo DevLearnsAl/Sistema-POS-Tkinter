@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="700" height="400" viewBox="0 0 700 400">
+<title>07 Agregar artículo</title>
+<rect id="Fondo" x="0" y="0" width="700" height="400" fill="#C6D9E3"/>
+<text id="Artículo" x="25.5" y="38" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Artículo: </text>
+<g id="Campo de texto">
+<rect id="Caja" x="120.5" y="20.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="Galletas María 200 g" x="125" y="40.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Galletas María 200 g</text>
+</g>
+<text id="Precio" x="30.5" y="78" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Precio: </text>
+<g id="Campo de texto 2">
+<rect id="Caja 2" x="120.5" y="60.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="3200" x="125" y="80.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">32.00</text>
+</g>
+<text id="Costo" x="32" y="118" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Costo: </text>
+<g id="Campo de texto 3">
+<rect id="Caja 3" x="120.5" y="100.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="2450" x="125" y="120.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">24.50</text>
+</g>
+<text id="Stock" x="33" y="158" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Stock: </text>
+<g id="Campo de texto 4">
+<rect id="Caja 4" x="120.5" y="140.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="30" x="125" y="160.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">30</text>
+</g>
+<text id="Estado" x="28" y="198" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Estado: </text>
+<g id="Lista desplegable">
+<rect id="Caja 5" x="120.5" y="180.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<rect id="Botón flecha" x="351" y="181" width="18" height="28" fill="#E8E8E8"/>
+<path id="Flecha" d="M356 193 L364 193 L360 198 Z" fill="#333333"/>
+<text id="Activo" x="125" y="200.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Activo</text>
+</g>
+<g id="Contenedor">
+<rect id="Fondo contenedor" x="440.5" y="30.5" width="199" height="199" fill="#FFFFFF" stroke="#808080" stroke-width="1"/>
+</g>
+<g id="Botón Cargar imagen">
+<rect id="Fondo botón" x="470.5" y="260.5" width="149" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo" x="471" y="261" width="148" height="1" fill="#FFFFFF"/>
+<text id="Cargar imagen" x="489" y="285.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Cargar imagen</text>
+</g>
+<g id="Botón Guardar">
+<rect id="Fondo botón 2" x="50.5" y="260.5" width="149" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 2" x="51" y="261" width="148" height="1" fill="#FFFFFF"/>
+<text id="Guardar" x="94" y="285.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Guardar</text>
+</g>
+<g id="Botón Cancelar">
+<rect id="Fondo botón 3" x="260.5" y="260.5" width="149" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 3" x="261" y="261" width="148" height="1" fill="#FFFFFF"/>
+<text id="Cancelar" x="301" y="285.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Cancelar</text>
+</g>
+</svg>

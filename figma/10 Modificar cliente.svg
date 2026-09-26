@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="400" height="400" viewBox="0 0 400 400">
+<title>10 Modificar cliente</title>
+<rect id="Fondo" x="0" y="0" width="400" height="400" fill="#C6D9E3"/>
+<text id="Nombre" x="21" y="26" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Nombre:</text>
+<g id="Campo de texto">
+<rect id="Caja" x="132.5" y="6.5" width="223" height="25" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="María López" x="137" y="26" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">María López</text>
+</g>
+<text id="Cédula" x="25" y="64" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Cédula:</text>
+<g id="Campo de texto 2">
+<rect id="Caja 2" x="132.5" y="44.5" width="223" height="25" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="0011503900001X" x="137" y="64" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">001-150390-0001X</text>
+</g>
+<text id="Celular" x="24" y="102" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Celular:</text>
+<g id="Campo de texto 3">
+<rect id="Caja 3" x="132.5" y="82.5" width="223" height="25" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="505 8888 7777" x="137" y="102" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">+505 8888 7777</text>
+</g>
+<text id="Dirección" x="13" y="140" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Dirección:</text>
+<g id="Campo de texto 4">
+<rect id="Caja 4" x="132.5" y="120.5" width="223" height="25" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="Managua" x="137" y="140" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Managua</text>
+</g>
+<text id="Correo" x="25" y="178" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Correo:</text>
+<g id="Campo de texto 5">
+<rect id="Caja 5" x="132.5" y="158.5" width="223" height="25" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="mariacorreocom" x="137" y="178" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">maria@correo.com</text>
+</g>
+<g id="Botón Guardar cambios">
+<rect id="Fondo botón" x="93.5" y="210.5" width="178" height="38" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo" x="94" y="211" width="177" height="1" fill="#FFFFFF"/>
+<text id="Guardar cambios" x="102" y="236.5" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Guardar cambios</text>
+</g>
+</svg>

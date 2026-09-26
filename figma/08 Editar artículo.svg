@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="700" height="400" viewBox="0 0 700 400">
+<title>08 Editar artículo</title>
+<rect id="Fondo" x="0" y="0" width="700" height="400" fill="#C6D9E3"/>
+<text id="Artículo" x="25.5" y="38" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Artículo: </text>
+<g id="Campo de texto">
+<rect id="Caja" x="120.5" y="20.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="CocaCola 15 L" x="125" y="40.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Coca-Cola 1.5 L</text>
+</g>
+<text id="Precio" x="30.5" y="78" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Precio: </text>
+<g id="Campo de texto 2">
+<rect id="Caja 2" x="120.5" y="60.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="5500" x="125" y="80.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">55.00</text>
+</g>
+<text id="Costo" x="32" y="118" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Costo: </text>
+<g id="Campo de texto 3">
+<rect id="Caja 3" x="120.5" y="100.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="4200" x="125" y="120.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">42.00</text>
+</g>
+<text id="Stock" x="33" y="158" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Stock: </text>
+<g id="Campo de texto 4">
+<rect id="Caja 4" x="120.5" y="140.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<text id="24" x="125" y="160.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">24</text>
+</g>
+<text id="Estado" x="28" y="198" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Estado: </text>
+<g id="Lista desplegable">
+<rect id="Caja 5" x="120.5" y="180.5" width="249" height="29" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+<rect id="Botón flecha" x="351" y="181" width="18" height="28" fill="#E8E8E8"/>
+<path id="Flecha" d="M356 193 L364 193 L360 198 Z" fill="#333333"/>
+<text id="Activo" x="125" y="200.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Activo</text>
+</g>
+<g id="Contenedor">
+<rect id="Fondo contenedor" x="440.5" y="30.5" width="199" height="199" fill="#FFFFFF" stroke="#808080" stroke-width="1"/>
+<rect id="Fondo imagen" x="441" y="31" width="198" height="198" fill="#F0F0F0"/>
+<image id="Imagen" x="440" y="30" width="200" height="200" xlink:href="data:image/png;base64,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"/>
+</g>
+<g id="Botón Cargar imagen">
+<rect id="Fondo botón" x="470.5" y="260.5" width="149" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo" x="471" y="261" width="148" height="1" fill="#FFFFFF"/>
+<text id="Cargar imagen" x="489" y="285.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Cargar imagen</text>
+</g>
+<g id="Botón Guardar">
+<rect id="Fondo botón 2" x="260.5" y="260.5" width="149" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 2" x="261" y="261" width="148" height="1" fill="#FFFFFF"/>
+<text id="Guardar" x="304" y="285.5" font-family="Arial" font-size="16.00" font-weight="bold" fill="#000000">Guardar</text>
+</g>
+</svg>

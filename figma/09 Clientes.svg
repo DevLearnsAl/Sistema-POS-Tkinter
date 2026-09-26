@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1100" height="650" viewBox="0 0 1100 650">
+<title>09 Clientes</title>
+<rect id="Fondo" x="0" y="0" width="1100" height="650" fill="#C6D9E3"/>
+<g id="Contenedor">
+<rect id="Fondo contenedor" x="0" y="0" width="1100" height="650" fill="#F0F0F0"/>
+<g id="Contenedor 2">
+<rect id="Fondo contenedor 2" x="0" y="0" width="1100" height="40" fill="#F0F0F0"/>
+<g id="Botón Ventas">
+<rect id="Fondo botón" x="0.5" y="0.5" width="183" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo" x="1" y="1" width="182" height="1" fill="#FFFFFF"/>
+<text id="Ventas" x="57.5" y="27" font-family="Arial" font-size="21.33" font-weight="bold" fill="#000000">Ventas</text>
+</g>
+<g id="Botón Inventario">
+<rect id="Fondo botón 2" x="184.5" y="0.5" width="183" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 2" x="185" y="1" width="182" height="1" fill="#FFFFFF"/>
+<text id="Inventario" x="225.5" y="27" font-family="Arial" font-size="21.33" font-weight="bold" fill="#000000">Inventario</text>
+</g>
+<g id="Botón Clientes">
+<rect id="Fondo botón 3" x="368.5" y="0.5" width="183" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 3" x="369" y="1" width="182" height="1" fill="#FFFFFF"/>
+<text id="Clientes" x="419.5" y="27" font-family="Arial" font-size="21.33" font-weight="bold" fill="#000000">Clientes</text>
+</g>
+<g id="Botón Pedidos">
+<rect id="Fondo botón 4" x="552.5" y="0.5" width="183" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 4" x="553" y="1" width="182" height="1" fill="#FFFFFF"/>
+<text id="Pedidos" x="603" y="27" font-family="Arial" font-size="21.33" font-weight="bold" fill="#000000">Pedidos</text>
+</g>
+<g id="Botón Proveedor">
+<rect id="Fondo botón 5" x="736.5" y="0.5" width="183" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 5" x="737" y="1" width="182" height="1" fill="#FFFFFF"/>
+<text id="Proveedor" x="775" y="27" font-family="Arial" font-size="21.33" font-weight="bold" fill="#000000">Proveedor</text>
+</g>
+<g id="Botón Información">
+<rect id="Fondo botón 6" x="920.5" y="0.5" width="183" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 6" x="921" y="1" width="182" height="1" fill="#FFFFFF"/>
+<text id="Información" x="952" y="27" font-family="Arial" font-size="21.33" font-weight="bold" fill="#000000">Información</text>
+</g>
+</g>
+<g id="Contenedor 3">
+<rect id="Fondo contenedor 3" x="0.5" y="40.5" width="1099" height="609" fill="#C6D9E3" stroke="#808080" stroke-width="1"/>
+<g id="Marco Clientes">
+<rect id="Borde" x="21.5" y="77.5" width="249" height="543" fill="#C6D9E3" stroke="#9AA5AE" stroke-width="1"/>
+<rect id="Fondo título" x="27" y="61" width="111" height="32" fill="#C6D9E3"/>
+<text id="Título Clientes" x="29" y="86" font-family="Arial" font-size="26.67" font-weight="bold" fill="#000000">Clientes</text>
+<text id="Nombre" x="36" y="136" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Nombre: </text>
+<g id="Campo de texto">
+<rect id="Caja" x="33.5" y="145.5" width="219" height="39" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+</g>
+<text id="Cédula" x="36" y="216" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Cédula: </text>
+<g id="Campo de texto 2">
+<rect id="Caja 2" x="33.5" y="225.5" width="219" height="39" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+</g>
+<text id="Celular" x="36" y="296" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Celular: </text>
+<g id="Campo de texto 3">
+<rect id="Caja 3" x="33.5" y="305.5" width="219" height="39" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+</g>
+<text id="Dirección" x="36" y="376" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Dirección: </text>
+<g id="Campo de texto 4">
+<rect id="Caja 4" x="33.5" y="385.5" width="219" height="39" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+</g>
+<text id="Correo" x="36" y="456" font-family="Arial" font-size="18.67" font-weight="bold" fill="#000000">Correo: </text>
+<g id="Campo de texto 5">
+<rect id="Caja 5" x="33.5" y="465.5" width="219" height="39" fill="#FFFFFF" stroke="#8A8F96" stroke-width="1"/>
+</g>
+<g id="Botón Ingresar">
+<rect id="Fondo botón 7" x="33.5" y="515.5" width="219" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 7" x="34" y="516" width="218" height="1" fill="#FFFFFF"/>
+<text id="Ingresar" x="101.5" y="542" font-family="Arial" font-size="21.33" font-weight="bold" fill="#000000">Ingresar</text>
+</g>
+<g id="Botón Modificar">
+<rect id="Fondo botón 8" x="33.5" y="565.5" width="219" height="39" fill="#F0F0F0" stroke="#8C8C8C" stroke-width="1"/>
+<rect id="Brillo 8" x="34" y="566" width="218" height="1" fill="#FFFFFF"/>
+<text id="Modificar" x="97" y="592" font-family="Arial" font-size="21.33" font-weight="bold" fill="#000000">Modificar</text>
+</g>
+</g>
+<g id="Contenedor 4">
+<rect id="Fondo contenedor 4" x="281" y="61" width="800" height="560" fill="#FFFFFF"/>
+<g id="Barra de desplazamiento">
+<rect id="Canal" x="1066.5" y="61.5" width="14" height="559" fill="#E6E6E6" stroke="#B8B8B8" stroke-width="1"/>
+<rect id="Deslizador" x="1069" y="79" width="9" height="524" fill="#C2C2C2"/>
+</g>
+<g id="Barra de desplazamiento 2">
+<rect id="Canal 2" x="281.5" y="606.5" width="784" height="14" fill="#E6E6E6" stroke="#B8B8B8" stroke-width="1"/>
+<rect id="Deslizador 2" x="299" y="609" width="749" height="9" fill="#C2C2C2"/>
+</g>
+<g id="Tabla">
+<rect id="Fondo tabla" x="281" y="61" width="785" height="545" fill="#FFFFFF"/>
+<g id="Encabezados">
+<rect id="Encabezado ID" x="281.5" y="61.5" width="49" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="ID" x="300.5" y="79" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">ID</text>
+<rect id="Encabezado Nombre" x="331.5" y="61.5" width="149" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Nombre 2" x="384" y="79" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Nombre</text>
+<rect id="Encabezado Cédula" x="481.5" y="61.5" width="119" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Cédula 2" x="522.5" y="79" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Cédula</text>
+<rect id="Encabezado Celular" x="601.5" y="61.5" width="119" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Celular 2" x="642.5" y="79" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Celular</text>
+<rect id="Encabezado Dirección" x="721.5" y="61.5" width="199" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Dirección 2" x="796" y="79" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Dirección</text>
+<rect id="Encabezado Correo" x="921.5" y="61.5" width="199" height="26" fill="#DCDAD5" stroke="#9E9A91" stroke-width="1"/>
+<text id="Correo 2" x="1003" y="79" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Correo</text>
+</g>
+<g id="Fila 1">
+<text id="1" x="305" y="102.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">1</text>
+<text id="Consumidor final" x="362" y="102.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Consumidor final</text>
+<text id="Texto" x="543" y="102.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000"></text>
+<text id="Texto 2" x="663" y="102.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000"></text>
+<text id="Texto 3" x="823" y="102.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000"></text>
+<text id="Texto 4" x="1023" y="102.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000"></text>
+</g>
+<g id="Fila 2">
+<text id="2" x="305" y="122.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">2</text>
+<text id="María López" x="376" y="122.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">María López</text>
+<text id="0011503900001X" x="495.5" y="122.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">001-150390-0001X</text>
+<text id="505 8888 7777" x="623" y="122.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">+505 8888 7777</text>
+<text id="Managua" x="798" y="122.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Managua</text>
+<text id="mariacorreocom" x="972" y="122.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">maria@correo.com</text>
+</g>
+<g id="Fila 3">
+<text id="3" x="305" y="142.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">3</text>
+<text id="Pedro Ruiz" x="380" y="142.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">Pedro Ruiz</text>
+<text id="2810101850002Y" x="495.5" y="142.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">281-010185-0002Y</text>
+<text id="505 8765 4321" x="623" y="142.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">+505 8765 4321</text>
+<text id="León" x="810" y="142.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">León</text>
+<text id="pedrocorreocom" x="971.5" y="142.5" font-family="Segoe UI" font-size="12.00" font-weight="normal" fill="#000000">pedro@correo.com</text>
+</g>
+</g>
+</g>
+</g>
+</g>
+</svg>
