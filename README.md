@@ -1,76 +1,103 @@
-# Minimarket (versión de referencia)
+# Minimarket: sistema de facturación en Python
 
-El sistema completo del curso [Crea un Sistema de Punto de Venta (POS) en Python Tkinter + SQLite3](https://www.youtube.com/playlist?list=PLoHtVmh39Q8Sg4wcyGPiiX3N0bOmvxrql)
-(Kevin Arboleda, InnovaSoft Code), con las correcciones de la
-[guía](https://claude.ai/artifact/XuQ86DFGdQQgsoHwj22E92).
+Sistema de punto de venta (POS) para un minimarket, hecho con Python, Tkinter y SQLite.
+Permite registrar ventas, controlar el inventario, administrar clientes y generar
+facturas en PDF. Los precios están en córdobas (C$).
 
-**Es un solucionario.** Tu versión la seguís escribiendo en `Sistema de facturación`.
-Usá esta solo para comparar después de intentarlo, o cuando lleves un rato trabado.
+| | |
+|---|---|
+| <img src="figma/01%20Login.svg" alt="Inicio de sesión" width="420"> | <img src="figma/03%20Ventas.svg" alt="Ventas" width="420"> |
+| <img src="figma/06%20Inventario.svg" alt="Inventario" width="420"> | <img src="figma/09%20Clientes.svg" alt="Clientes" width="420"> |
 
-## Cómo correrlo
+## Funciones
+
+- **Inicio de sesión y registro.** Para crear usuarios nuevos se pide un código de autorización.
+- **Ventas.** Se elige el cliente y el producto (con buscador), se ve el stock disponible
+  y se arma la lista de cobro, que se puede editar antes de pagar. Al cobrar, el sistema
+  calcula el cambio, guarda la venta, descuenta el stock y genera la factura en PDF.
+- **Ventas realizadas.** Historial de ventas con filtro por número de factura o por cliente.
+- **Inventario.** Productos en tarjetas con foto, búsqueda, y formularios para agregar y
+  editar precio, costo, stock y estado. Los productos inactivos no se pueden vender.
+- **Clientes.** Registro y modificación de clientes (nombre, cédula, celular, dirección y
+  correo). Las ventas de mostrador usan el cliente «Consumidor final».
+- **Pedidos, Proveedor e Información.** Módulos pendientes.
+
+## Tecnologías
+
+Python 3 · Tkinter / ttk · SQLite3 · Pillow (imágenes) · ReportLab (facturas PDF)
+
+## Cómo ejecutarlo
+
+Requiere Python 3 en Windows.
 
 ```powershell
-py -m pip install pillow reportlab
+git clone https://github.com/DevLearnsAl/Sistema-POS-Tkinter.git
+cd Sistema-POS-Tkinter
+py -m pip install -r requirements.txt
 py index.py
 ```
 
+Datos de acceso:
+
 - Usuario: `admin` · Contraseña: `admin`
 - Código para registrar usuarios nuevos: `1234`
-- La primera vez se crea `database.db` con 6 productos de ejemplo y el cliente
-  «Consumidor final». Para empezar de cero, borrá `database.db`.
-- Las facturas en PDF se guardan en `facturas/` y se abren solas.
+
+La primera vez que se ejecuta, el programa crea `database.db` con 6 productos de ejemplo
+y el cliente «Consumidor final». Para empezar de cero, basta con borrar `database.db`.
+
+## Cómo funciona
+
+Al abrir el programa aparece el inicio de sesión. Después de entrar, la ventana principal
+muestra una barra con los seis módulos. Ventas e Inventario recargan sus datos cada vez
+que se abren, así un producto agregado en Inventario aparece de inmediato en Ventas.
+
+Flujo de una venta:
+
+1. Elegir el cliente, el producto y la cantidad, y pulsar **Agregar artículo**.
+2. Repetir con cada producto. La lista muestra el total a pagar.
+3. Pulsar **Pagar** e ingresar el monto recibido. El sistema muestra el cambio.
+4. La venta se guarda en una sola transacción junto con el descuento del stock. Si algo
+   falla, se deshace completa y el stock no cambia.
+5. La factura se guarda en `facturas/Factura_<número>.pdf` y se abre automáticamente.
+
+### Estructura del proyecto
+
+| Archivo | Qué hace |
+|---|---|
+| `index.py` | Punto de entrada: crea la base de datos si no existe y abre la aplicación |
+| `manager.py` | Ventana principal; cambia entre el inicio de sesión y el sistema |
+| `container.py` | Barra de módulos y área donde se muestra cada uno |
+| `login.py` | Inicio de sesión y registro de usuarios |
+| `ventas.py` | Lista de cobro, pago, historial de ventas y factura PDF |
+| `inventario.py` | Tarjetas de productos, búsqueda, agregar y editar |
+| `clientes.py` | Registro y modificación de clientes |
+| `pedidos.py`, `proveedor.py`, `informacion.py` | Módulos pendientes |
+| `schema.sql`, `crear_bd.py` | Tablas de la base de datos y datos de ejemplo |
+| `imagenes/`, `fotos/` | Fondo, logo y foto por defecto de los productos |
+| `figma/` | Las pantallas del diseño en SVG |
+
+### Base de datos
+
+Cuatro tablas en SQLite: `usuarios`, `articulos`, `ventas` y `clientes`. Las reglas de
+negocio están en el propio esquema: nombres de usuario y de producto únicos, cédula
+única, precio mayor que cero, y stock que nunca puede quedar negativo después de una venta.
 
 ## Diseño en Figma
 
-Archivo de Figma con las 10 pantallas, construidas con componentes y variables de
-color: https://www.figma.com/design/6CKct9Qie9gWxHvhaddS1C
+Las 10 pantallas del sistema están diseñadas en Figma con componentes y variables de color:
+https://www.figma.com/design/6CKct9Qie9gWxHvhaddS1C
 
-La carpeta `figma/` tiene las mismas pantallas como SVG, por si necesitás
-importarlas en otro archivo (arrastralas al lienzo de Figma).
+La carpeta `figma/` tiene las mismas pantallas en SVG, listas para arrastrar a un lienzo de Figma.
 
-## Qué archivo corresponde a cada video
+## Próximas mejoras
 
-| Archivo | Videos | Qué hace |
-|---|---|---|
-| `index.py`, `manager.py` | 1 | Arranque, ventana principal, cambio entre login y sistema |
-| `container.py` | 1, 2 | Barra de 6 botones y área de módulos |
-| `login.py` | 3, 4 | Login y registro |
-| `schema.sql`, `crear_bd.py` | 3, 5, 7, 10 | Las tablas (en el curso se crean con clics en DB Browser) |
-| `inventario.py` | 4, 5 | Tarjetas de productos, buscar, agregar y editar |
-| `ventas.py` | 6, 7, 8 | Carrito, cobro, ventas realizadas y factura PDF |
-| `clientes.py` | 9, 10 | Registrar y modificar clientes |
-| `pedidos.py`, `proveedor.py`, `informacion.py` | 10 | Vacíos: el curso los deja para que los hagás vos |
+- Guardar las contraseñas con hash.
+- Guardar el dinero en centavos enteros en lugar de números decimales (`REAL`).
+- Separar las ventas en `ventas` y `detalle_venta`.
+- Calcular el IVA y agregar lectura de código de barras.
+- Construir los módulos de Pedidos, Proveedor e Información.
 
-## Correcciones
+## Créditos
 
-Cada cambio respecto del video tiene un comentario que empieza con `Corrección`
-(o `Reto`, cuando resuelve un reto de la guía). Buscalos con Ctrl+Shift+F en VS Code.
-
-**De la guía:** centavos visibles (`.2f`) y `C$`; `UNIQUE` y `CHECK` en las tablas;
-cédula y celular como `TEXT`; estado con Combobox de solo lectura; `self.after` en
-vez de `threading.Timer`; «Pago realizado» después del `commit`, con `rollback` si
-falla; «Consumidor final» por defecto; la carpeta `facturas` se crea sola; el filtro
-de ventas hecho con SQL; y todos los errores que el autor corrige en cámara.
-
-**Encontradas al construirlo (no están en la guía):**
-
-1. Un producto agregado en Inventario no aparecía en Ventas hasta reiniciar. Ahora
-   cada módulo se actualiza al mostrarse (`al_mostrar`).
-2. Se podían vender productos inactivos.
-3. Después de cargar una foto, el siguiente producto sin foto se llevaba la foto
-   del anterior.
-4. Si agregabas el mismo producto dos veces y eliminabas una línea, se borraban
-   las dos de la lista de cobro pero solo una de la pantalla.
-5. Cada línea guardaba el cliente que estaba elegido al agregarla, no el del cobro.
-6. Elegir «No se encontraron resultados» en el producto cerraba el programa con un error.
-7. Si un INSERT fallaba (por ejemplo, una cédula repetida), la conexión quedaba
-   abierta con la base bloqueada y la siguiente venta daba «database is locked».
-   Por eso las escrituras cierran la conexión en un `finally`, e Inventario hace
-   `rollback()` en el `except`.
-
-## Lo que no cambié
-
-Queda igual que en el curso y va en la sección «Después del curso» de la guía:
-dinero como `REAL` en vez de centavos enteros, una sola tabla `ventas` sin
-`detalle_venta`, número de factura con `MAX + 1`, sin IVA, sin código de barras
-y contraseñas sin hash.
+Basado en el curso [Crea un Sistema de Punto de Venta (POS) en Python Tkinter + SQLite3](https://www.youtube.com/playlist?list=PLoHtVmh39Q8Sg4wcyGPiiX3N0bOmvxrql)
+de InnovaSoft Code, con correcciones y mejoras.
