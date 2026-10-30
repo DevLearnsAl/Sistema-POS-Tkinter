@@ -1,482 +1,412 @@
+import csv
+import datetime
 import os
+import re
 import sqlite3
 import tkinter as tk
+import unicodedata
+import uuid
 from tkinter import ttk, messagebox, filedialog
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageOps, ImageTk
 
-db_name = "database.db"
-COLOR_FONDO = "#C6D9E3"
+import db
+from estilos import (FONDO, BLANCO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, VERDE_FONDO, ROJO, ROJO_FONDO, AMBAR,
+                     AMBAR_FONDO, GRIS_FONDO, CLARO, FUENTE, F_PEQUE, F_NEGRITA, F_SUBTITULO, F_TITULO, moneda,
+                     boton, cambiar_tipo, panel, etiqueta, campo, lista, ventana_modal)
+from utilidades import codigo_interno
+
+CARPETA_FOTOS = "fotos"
+FOTO_DEFECTO = os.path.join(CARPETA_FOTOS, "default.png")
+COLUMNAS = ["id", "codigo", "articulo", "precio", "costo", "stock", "stock_minimo", "iva", "estado", "image_path"]
+FILTROS = ["Todos", "Stock bajo", "Inactivos"]
 
 
-def mensaje_integridad(error):
-    """Traduce los errores de UNIQUE y CHECK de la tabla articulos a un mensaje claro."""
-    texto = str(error)
-    if "UNIQUE" in texto:
-        return "Ya existe un artículo con ese nombre."
-    if "CHECK" in texto:
-        return "El precio debe ser mayor que 0, y el costo y el stock no pueden ser negativos."
-    return f"No se pudo guardar el artículo: {texto}"
+def estado_stock(p):
+    """Texto y colores de la etiqueta de stock de un producto."""
+    if p["estado"] == "Inactivo":
+        return "Inactivo", TEXTO_SUAVE, GRIS_FONDO
+    if p["stock"] == 0:
+        return "Agotado", ROJO, ROJO_FONDO
+    if p["stock"] <= p["stock_minimo"]:
+        return f"Stock bajo · {p['stock']}", AMBAR, AMBAR_FONDO
+    return f"Stock: {p['stock']}", VERDE, VERDE_FONDO
 
 
 class Inventario(tk.Frame):
-    def __init__(self, padre):
-        super().__init__(padre)
-        # Corrección (guía, video 5, [0:56:41]): en el video la conexión se crea dentro de
-        # articulos_combobox y, si esa función no se llama primero, guardar falla.
-        # Aquí se crea en el constructor, antes que todo lo demás.
-        self.con = sqlite3.connect(db_name)
-        self.cur = self.con.cursor()
-
-        self.timer_articulos = None
-        self.image_path = None
-        self.articulos = []
-
-        self.image_folder = "fotos"
-        if not os.path.exists(self.image_folder):
-            os.makedirs(self.image_folder)
-
+    def __init__(self, padre, controlador):
+        super().__init__(padre, bg=FONDO)
+        self.controlador = controlador
+        self.productos = []
+        self.seleccionado = None
+        self.filtro = "Todos"
+        self.timer = None
+        self.imagenes = {}      # caché de imágenes: Tkinter necesita guardar la referencia
+        self.tarjetas = {}
+        os.makedirs(CARPETA_FOTOS, exist_ok=True)
         self.widgets()
-        self.articulos_combobox()
-        self.cargar_articulos()
 
-    def al_mostrar(self):
-        # Una venta cambia el stock: al volver a Inventario se refresca la selección.
-        self.articulos_combobox()
-        if self.comboboxbuscar.get():
-            self.actualizar_label()
-
+    # ------------------------------------------------------------------ interfaz
     def widgets(self):
-        # ---------------- Label frame 1: artículos ----------------
-        canvas_articulos = tk.LabelFrame(self, text="Artículos", font="arial 14 bold", bg=COLOR_FONDO)
-        canvas_articulos.place(x=300, y=10, width=780, height=580)
+        barra = panel(self)
+        barra.place(x=16, y=16, width=1068, height=64)
+        etiqueta(barra, "Buscar", F_NEGRITA, TEXTO).place(x=16, y=20)
+        self.entry_buscar = campo(barra)
+        self.entry_buscar.place(x=80, y=14, width=280, height=36)
+        self.entry_buscar.bind("<KeyRelease>", self._programar_busqueda)
+        self.btns_filtro = {}
+        for i, nombre in enumerate(FILTROS):
+            b = boton(barra, nombre, lambda n=nombre: self.cambiar_filtro(n),
+                      "primario" if nombre == self.filtro else "secundario")
+            b.place(x=380 + i * 118, y=14, width=110, height=36)
+            self.btns_filtro[nombre] = b
+        boton(barra, "Exportar CSV", self.exportar, "secundario").place(x=734, y=14, width=116, height=36)
+        self.btn_editar = boton(barra, "Editar", self.editar_articulo, "secundario")
+        self.btn_editar.place(x=860, y=14, width=90, height=36)
+        self.btn_nuevo = boton(barra, "Nuevo", self.agregar_articulo)
+        self.btn_nuevo.place(x=960, y=14, width=92, height=36)
 
-        # Canvas con barra de desplazamiento: el Canvas es lo que se desplaza, el Frame
-        # de adentro (scrollable_frame) contiene las tarjetas, y cada vez que ese Frame
-        # cambia de tamaño se actualiza la zona desplazable (scrollregion).
-        self.canvas = tk.Canvas(canvas_articulos, bg=COLOR_FONDO)
-        self.scrollbar = tk.Scrollbar(canvas_articulos, orient="vertical", command=self.canvas.yview)
-        self.scrollable_frame = tk.Frame(self.canvas, bg=COLOR_FONDO)
+        cont = panel(self, "Productos")
+        cont.place(x=16, y=92, width=740, height=498)
+        self.lbl_conteo = etiqueta(cont, "", F_PEQUE, TEXTO_SUAVE)
+        self.lbl_conteo.place(x=722, y=16, anchor="ne")
+        self.canvas = tk.Canvas(cont, bg=BLANCO, highlightthickness=0)
+        self.barra = ttk.Scrollbar(cont, orient="vertical", command=self.canvas.yview)
+        self.grilla = tk.Frame(self.canvas, bg=BLANCO)
+        self.grilla.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.create_window((0, 0), window=self.grilla, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.barra.set)
+        self.canvas.place(x=8, y=44, width=712, height=446)
+        self.barra.place(x=722, y=44, width=14, height=446)
+        self.canvas.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._rueda))
+        self.canvas.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
 
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
-        )
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        det = panel(self, "Detalle")
+        det.place(x=772, y=92, width=312, height=498)
+        self.det_vacio = etiqueta(det, "Seleccione un producto para ver su detalle.", F_PEQUE, TEXTO_SUAVE,
+                                  wraplength=280, justify="left")
+        self.det = tk.Frame(det, bg=BLANCO)
+        self.det_img = tk.Label(self.det, bg=BLANCO)
+        self.det_img.place(x=15, y=0, width=120, height=120)
+        self.det_nombre = etiqueta(self.det, "", F_NEGRITA, TEXTO, wraplength=150, justify="left", anchor="nw")
+        self.det_nombre.place(x=147, y=4, width=150, height=60)
+        self.det_codigo = etiqueta(self.det, "", F_PEQUE, TEXTO_SUAVE, justify="left", anchor="nw")
+        self.det_codigo.place(x=147, y=66)
+        self.det_badge = tk.Label(self.det, font=(FUENTE, 9, "bold"), padx=8, pady=2)
+        self.det_badge.place(x=147, y=94)
+        self.det_valores = {}
+        for i, clave in enumerate(["Precio", "Costo", "Margen", "Stock", "Stock mínimo", "IVA", "Estado"]):
+            y = 138 + i * 30
+            etiqueta(self.det, clave, F_PEQUE, TEXTO_SUAVE).place(x=15, y=y)
+            v = etiqueta(self.det, "", F_NEGRITA, TEXTO)
+            v.place(x=295, y=y - 2, anchor="ne")
+            self.det_valores[clave] = v
+        self.btn_editar_detalle = boton(self.det, "Editar producto", self.editar_articulo)
+        self.btn_editar_detalle.place(x=15, y=356, width=280, height=40)
 
-        self.scrollbar.pack(side="right", fill="y")
-        self.canvas.pack(side="left", fill="both", expand=True)
+    def _rueda(self, event):
+        self.canvas.yview_scroll(int(-event.delta / 120), "units")
 
-        # ---------------- Label frame 2: buscar ----------------
-        lblframe_buscar = tk.LabelFrame(self, text="Buscar", font="arial 14 bold", bg=COLOR_FONDO)
-        lblframe_buscar.place(x=10, y=10, width=280, height=80)
+    # ------------------------------------------------------------------ datos
+    def al_mostrar(self):
+        # El cajero consulta precios y existencias, pero no cambia el catálogo.
+        estado = "normal" if self.controlador.puede("editar_inventario") else "disabled"
+        for b in (self.btn_editar, self.btn_nuevo, self.btn_editar_detalle):
+            b.config(state=estado)
+        self.refrescar()
 
-        self.comboboxbuscar = ttk.Combobox(lblframe_buscar, font="arial 12")
-        self.comboboxbuscar.place(x=5, y=5, width=260, height=40)
-        self.comboboxbuscar.bind("<<ComboboxSelected>>", self.on_combobox_select)
-        self.comboboxbuscar.bind("<KeyRelease>", self.filtrar_articulos)
+    def _programar_busqueda(self, event=None):
+        if self.timer:
+            self.after_cancel(self.timer)
+        self.timer = self.after(250, self.refrescar)
 
-        # ---------------- Label frame 3: selección ----------------
-        lblframe_seleccion = tk.LabelFrame(self, text="Selección", font="arial 14 bold", bg=COLOR_FONDO)
-        lblframe_seleccion.place(x=10, y=95, width=280, height=190)
+    def cambiar_filtro(self, nombre):
+        self.filtro = nombre
+        for n, b in self.btns_filtro.items():
+            cambiar_tipo(b, "primario" if n == nombre else "secundario")
+        self.refrescar()
 
-        self.label1 = tk.Label(lblframe_seleccion, text="Artículo: ", font="arial 12", bg=COLOR_FONDO, wraplength=260)
-        self.label1.place(x=5, y=5)
-        self.label2 = tk.Label(lblframe_seleccion, text="Precio: ", font="arial 12", bg=COLOR_FONDO)
-        self.label2.place(x=5, y=40)
-        self.label3 = tk.Label(lblframe_seleccion, text="Costo: ", font="arial 12", bg=COLOR_FONDO)
-        self.label3.place(x=5, y=70)
-        self.label4 = tk.Label(lblframe_seleccion, text="Stock: ", font="arial 12", bg=COLOR_FONDO)
-        self.label4.place(x=5, y=100)
-        self.label5 = tk.Label(lblframe_seleccion, text="Estado: ", font="arial 12", bg=COLOR_FONDO)
-        self.label5.place(x=5, y=130)
+    def _pasa_filtro(self, p):
+        if self.filtro == "Stock bajo":
+            return p["estado"] == "Activo" and p["stock"] <= p["stock_minimo"]
+        if self.filtro == "Inactivos":
+            return p["estado"] == "Inactivo"
+        return True
 
-        # ---------------- Label frame 4: opciones ----------------
-        lblframe_botones = tk.LabelFrame(self, bg=COLOR_FONDO, text="Opciones", font="arial 14 bold")
-        lblframe_botones.place(x=10, y=290, width=280, height=300)
+    def refrescar(self):
+        self.timer = None
+        filas = db.consultar(f"SELECT {', '.join(COLUMNAS)} FROM articulos ORDER BY articulo")
+        self.productos = [dict(zip(COLUMNAS, f)) for f in filas]
+        texto = self.entry_buscar.get().strip().lower()
+        visibles = [p for p in self.productos
+                    if (not texto or texto in p["articulo"].lower() or texto in (p["codigo"] or ""))
+                    and self._pasa_filtro(p)]
 
-        btn1 = tk.Button(lblframe_botones, text="Agregar", font="arial 14 bold", command=self.agregar_articulo)
-        btn1.place(x=20, y=20, width=180, height=40)
+        for w in self.grilla.winfo_children():
+            w.destroy()
+        self.tarjetas = {}
+        for i, p in enumerate(visibles):
+            self.tarjeta(p, i // 4, i % 4)
+        if not visibles:
+            etiqueta(self.grilla, "No hay productos que coincidan con la búsqueda.", F_PEQUE, TEXTO_SUAVE).grid(
+                row=0, column=0, padx=16, pady=16)
+        self.lbl_conteo.config(text=f"{len(visibles)} de {len(self.productos)} productos")
+        self.canvas.yview_moveto(0)
+        if self.seleccionado not in {p["id"] for p in self.productos}:
+            self.seleccionado = None
+        self.mostrar_detalle()
 
-        # Corrección (guía, video 5, [2:16:05]): el botón Editar necesita su command.
-        btn2 = tk.Button(lblframe_botones, text="Editar", font="arial 14 bold", command=self.editar_articulo)
-        btn2.place(x=20, y=80, width=180, height=40)
+    def imagen(self, ruta, lado):
+        clave = (ruta, lado)
+        if clave not in self.imagenes:
+            try:
+                img = Image.open(ruta if ruta and os.path.exists(ruta) else FOTO_DEFECTO)
+            except OSError:
+                img = Image.open(FOTO_DEFECTO)
+            self.imagenes[clave] = ImageTk.PhotoImage(ImageOps.fit(img.convert("RGB"), (lado, lado)))
+        return self.imagenes[clave]
 
-    # ---------------- Imágenes ----------------
-    def load_image(self):
-        file_path = filedialog.askopenfilename(
-            filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.gif *.bmp")]
-        )
-        if file_path:
-            image = Image.open(file_path)
-            # Corrección (guía, video 5, [0:30:38]): el paréntesis se cierra después de LANCZOS.
-            image = image.resize((200, 200), Image.LANCZOS)
-            image_name = os.path.basename(file_path)
-            image_save_path = os.path.join(self.image_folder, image_name)
-            image.save(image_save_path)
+    def tarjeta(self, p, fila, columna):
+        sel = p["id"] == self.seleccionado
+        f = tk.Frame(self.grilla, bg=BLANCO, cursor="hand2", highlightthickness=2,
+                     highlightbackground=NAVY if sel else BORDE)
+        f.grid(row=fila, column=columna, padx=6, pady=6)
+        tk.Label(f, image=self.imagen(p["image_path"], 128), bg=BLANCO).pack(padx=14, pady=(12, 6))
+        tk.Label(f, text=p["articulo"], font=(FUENTE, 10, "bold"), fg=TEXTO, bg=BLANCO, wraplength=140,
+                 justify="center", height=2).pack(padx=8)
+        tk.Label(f, text=moneda(p["precio"]), font=(FUENTE, 12, "bold"), fg=NAVY, bg=BLANCO).pack()
+        texto, fg, bg = estado_stock(p)
+        tk.Label(f, text=texto, font=(FUENTE, 9, "bold"), fg=fg, bg=bg, padx=8, pady=2).pack(pady=(4, 12))
+        for w in (f, *f.winfo_children()):
+            w.bind("<Button-1>", lambda e, i=p["id"]: self.seleccionar(i))
+            w.bind("<Double-1>", lambda e, i=p["id"]: self._editar_id(i))
+        self.tarjetas[p["id"]] = f
 
-            self.image_tk = ImageTk.PhotoImage(image)
-            self.product_image = self.image_tk
-            self.image_path = image_save_path
+    def seleccionar(self, id_producto):
+        self.seleccionado = id_producto
+        for i, f in self.tarjetas.items():
+            f.config(highlightbackground=NAVY if i == id_producto else BORDE)
+        self.mostrar_detalle()
 
-            img_label = tk.Label(self.frameimg, image=self.image_tk)
-            img_label.place(x=0, y=0, width=200, height=200)
+    def producto(self, id_producto):
+        return next((p for p in self.productos if p["id"] == id_producto), None)
 
-    # ---------------- Agregar ----------------
+    def mostrar_detalle(self):
+        p = self.producto(self.seleccionado)
+        if p is None:
+            self.det.place_forget()
+            self.det_vacio.place(x=16, y=48)
+            return
+        self.det_vacio.place_forget()
+        self.det.place(x=1, y=44, width=310, height=450)
+        self.det_img.config(image=self.imagen(p["image_path"], 120))
+        self.det_nombre.config(text=p["articulo"])
+        self.det_codigo.config(text=f"Código: {p['codigo']}" if p["codigo"] else "Sin código de barras")
+        texto, fg, bg = estado_stock(p)
+        self.det_badge.config(text=texto, fg=fg, bg=bg)
+        precio_sin_iva = p["precio"] / (1 + p["iva"] / 100)
+        margen = (precio_sin_iva - p["costo"]) / precio_sin_iva * 100 if precio_sin_iva else 0
+        valores = {"Precio": moneda(p["precio"]), "Costo": moneda(p["costo"]), "Margen": f"{margen:.1f} %",
+                   "Stock": f"{p['stock']} unidades", "Stock mínimo": str(p["stock_minimo"]),
+                   "IVA": f"Gravado {p['iva']:.0f} %" if p["iva"] else "Exento", "Estado": p["estado"]}
+        for clave, valor in valores.items():
+            self.det_valores[clave].config(text=valor, fg=TEXTO)
+        self.det_valores["Estado"].config(fg=VERDE if p["estado"] == "Activo" else ROJO)
+        self.det_valores["Margen"].config(fg=ROJO if margen < 0 else TEXTO)
+
+    # ------------------------------------------------------------------ acciones
+    def _puede_editar(self):
+        if self.controlador.puede("editar_inventario"):
+            return True
+        messagebox.showwarning("Inventario", "Solo un administrador puede crear o editar productos.", parent=self)
+        return False
+
     def agregar_articulo(self):
-        # Corrección extra: en el video, después de cargar una imagen, self.image_path
-        # quedaba guardado y el siguiente producto sin foto se llevaba la foto del anterior.
-        self.image_path = None
+        if self._puede_editar():
+            FormularioProducto(self)
 
-        top = tk.Toplevel(self)
-        top.title("Agregar artículo")
-        top.geometry("700x400+200+50")
-        top.config(bg=COLOR_FONDO)
-        top.resizable(False, False)
-        # transient + grab_set: la ventana queda encima y bloquea la principal hasta cerrarla.
-        top.transient(self.master)
-        top.grab_set()
-        top.focus_set()
-        top.lift()
-
-        label_articulo = tk.Label(top, text="Artículo: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_articulo.place(x=20, y=20, width=80, height=25)
-        entry_articulo = ttk.Entry(top, font="arial 12 bold")
-        entry_articulo.place(x=120, y=20, width=250, height=30)
-
-        label_precio = tk.Label(top, text="Precio: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_precio.place(x=20, y=60, width=80, height=25)
-        entry_precio = ttk.Entry(top, font="arial 12 bold")
-        entry_precio.place(x=120, y=60, width=250, height=30)
-
-        label_costo = tk.Label(top, text="Costo: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_costo.place(x=20, y=100, width=80, height=25)
-        entry_costo = ttk.Entry(top, font="arial 12 bold")
-        entry_costo.place(x=120, y=100, width=250, height=30)
-
-        label_stock = tk.Label(top, text="Stock: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_stock.place(x=20, y=140, width=80, height=25)
-        entry_stock = ttk.Entry(top, font="arial 12 bold")
-        entry_stock.place(x=120, y=140, width=250, height=30)
-
-        # Corrección (guía, video 5 y video 6 [0:04:07]): Combobox de solo lectura en vez de
-        # un Entry, para que el estado solo pueda ser "Activo" o "Inactivo".
-        label_estado = tk.Label(top, text="Estado: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_estado.place(x=20, y=180, width=80, height=25)
-        entry_estado = ttk.Combobox(top, font="arial 12 bold", values=["Activo", "Inactivo"], state="readonly")
-        entry_estado.set("Activo")
-        entry_estado.place(x=120, y=180, width=250, height=30)
-
-        self.frameimg = tk.Frame(top, bg="white", highlightbackground="gray", highlightthickness=1)
-        self.frameimg.place(x=440, y=30, width=200, height=200)
-
-        btnimage = tk.Button(top, text="Cargar imagen", font="arial 12 bold", command=self.load_image)
-        btnimage.place(x=470, y=260, width=150, height=40)
-
-        def guardar():
-            articulo = entry_articulo.get().strip()
-            precio = entry_precio.get()
-            costo = entry_costo.get()
-            stock = entry_stock.get()
-            estado = entry_estado.get()
-
-            if not articulo or not precio or not costo or not stock or not estado:
-                messagebox.showerror("Error", "Todos los campos deben ser completados")
-                return
-
-            try:
-                precio = round(float(precio), 2)
-                costo = round(float(costo), 2)
-                stock = int(stock)
-            except ValueError:
-                messagebox.showerror("Error", "Precio, costo y stock deben ser números válidos")
-                return
-
-            if self.image_path:
-                image_path = self.image_path
-            else:
-                image_path = os.path.join(self.image_folder, "default.png")
-
-            try:
-                self.cur.execute(
-                    "INSERT INTO articulos (articulo, precio, costo, stock, estado, image_path) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (articulo, precio, costo, stock, estado, image_path),
-                )
-                self.con.commit()
-            except sqlite3.IntegrityError as e:
-                self.con.rollback()
-                messagebox.showerror("Error", mensaje_integridad(e))
-                return
-            except sqlite3.Error as e:
-                self.con.rollback()
-                print("Error al cargar el artículo:", e)
-                messagebox.showerror("Error", f"Error al agregar el artículo: {e}")
-                return
-
-            messagebox.showinfo("Éxito", "Artículo agregado correctamente")
-            top.destroy()
-            # Corrección (guía, video 5, [1:48:10]): recargar para que se vea el producto nuevo.
-            self.cargar_articulos()
-            self.articulos_combobox()
-
-        btn_guardar = tk.Button(top, text="Guardar", font="arial 12 bold", command=guardar)
-        btn_guardar.place(x=50, y=260, width=150, height=40)
-
-        btn_cancelar = tk.Button(top, text="Cancelar", font="arial 12 bold", command=top.destroy)
-        btn_cancelar.place(x=260, y=260, width=150, height=40)
-
-    # ---------------- Mostrar ----------------
-    def articulos_combobox(self):
-        self.cur.execute("SELECT articulo FROM articulos")
-        self.articulos = [row[0] for row in self.cur.fetchall()]
-        self.comboboxbuscar["values"] = self.articulos
-
-    def cargar_articulos(self, filtro=None):
-        self.after(0, self._cargar_articulos, filtro)
-
-    def _cargar_articulos(self, filtro=None):
-        for widget in self.scrollable_frame.winfo_children():
-            widget.destroy()
-
-        # Corrección (guía, video 5, [1:44:02] y [1:45:04]): el espacio antes de WHERE
-        # y el % cerrado en los dos lados del filtro.
-        query = "SELECT articulo, precio, image_path FROM articulos"
-        params = []
-        if filtro:
-            query += " WHERE articulo LIKE ?"
-            params.append(f"%{filtro}%")
-
-        self.cur.execute(query, params)
-        articulos = self.cur.fetchall()
-
-        self.row = 0
-        self.column = 0
-        for articulo, precio, image_path in articulos:
-            self.mostrar_articulo(articulo, precio, image_path)
-
-    def mostrar_articulo(self, articulo, precio, image_path):
-        article_frame = tk.Frame(self.scrollable_frame, bg="white", relief="solid")
-        # grid acomoda las tarjetas en filas y columnas.
-        article_frame.grid(row=self.row, column=self.column, padx=10, pady=10)
-
-        if image_path and os.path.exists(image_path):
-            image = Image.open(image_path)
-            image = image.resize((150, 150), Image.LANCZOS)
-            imagen = ImageTk.PhotoImage(image)
-            image_label = tk.Label(article_frame, image=imagen)
-            image_label.image = imagen  # guardar la referencia para que Python no borre la imagen
-            image_label.pack(expand=True, fill="both")
-
-        name_label = tk.Label(article_frame, text=articulo, bg="white", anchor="w",
-                              wraplength=150, font="arial 10 bold")
-        name_label.pack(side="top", fill="x")
-
-        # Corrección (guía, video 7): .2f para ver los centavos, y C$ en vez de $.
-        precio_label = tk.Label(article_frame, text=f"Precio: C$ {precio:,.2f}", bg="white",
-                                anchor="w", wraplength=150, font="arial 8 bold")
-        precio_label.pack(side="top", fill="x")
-
-        # Cuatro tarjetas por fila: al pasar de la columna 3 se empieza una fila nueva.
-        self.column += 1
-        if self.column > 3:
-            self.column = 0
-            self.row += 1
-
-    # ---------------- Selección ----------------
-    def on_combobox_select(self, event):
-        self.actualizar_label()
-
-    def actualizar_label(self, event=None):
-        articulo_seleccionado = self.comboboxbuscar.get()
-
-        try:
-            # Corrección (guía, video 5, [1:31:45]): la coma en (articulo_seleccionado,).
-            # Sin la coma es un texto y SQLite toma cada letra como un parámetro.
-            self.cur.execute(
-                "SELECT articulo, precio, costo, stock, estado FROM articulos WHERE articulo = ?",
-                (articulo_seleccionado,),
-            )
-            resultado = self.cur.fetchone()
-
-            if resultado is not None:
-                articulo, precio, costo, stock, estado = resultado
-
-                self.label1.config(text=f"Artículo: {articulo}")
-                self.label2.config(text=f"Precio: C$ {precio:,.2f}")
-                self.label3.config(text=f"Costo: C$ {costo:,.2f}")
-                self.label4.config(text=f"Stock: {stock}")
-                self.label5.config(text=f"Estado: {estado}")
-
-                # Corrección (guía, video 6, [0:03:06]): comparar en minúsculas.
-                if estado.lower() == "activo":
-                    self.label5.config(fg="green")
-                elif estado.lower() == "inactivo":
-                    self.label5.config(fg="red")
-                else:
-                    self.label5.config(fg="black")
-            else:
-                self.label1.config(text="Artículo: No encontrado")
-                self.label2.config(text="Precio: N/A")
-                self.label3.config(text="Costo: N/A")
-                self.label4.config(text="Stock: N/A")
-                self.label5.config(text="Estado: N/A", fg="black")
-        except sqlite3.Error as e:
-            print("Error al obtener los datos del artículo:", e)
-            messagebox.showerror("Error", "Error al obtener los datos del artículo")
-
-    # ---------------- Filtro mientras se escribe ----------------
-    def filtrar_articulos(self, event):
-        # Corrección (guía, video 5): self.after en vez de threading.Timer. Tkinter no es
-        # seguro con hilos; after espera medio segundo sin salir del hilo de la ventana.
-        # Si se presiona otra tecla antes, se cancela la espera anterior y empieza otra.
-        if self.timer_articulos:
-            self.after_cancel(self.timer_articulos)
-        self.timer_articulos = self.after(500, self._filter_articulos)
-
-    def _filter_articulos(self):
-        self.timer_articulos = None
-        typed = self.comboboxbuscar.get()
-
-        if typed == "":
-            data = self.articulos
-        else:
-            data = [item for item in self.articulos if typed.lower() in item.lower()]
-
-        if data:
-            self.comboboxbuscar["values"] = data
-            self.comboboxbuscar.event_generate("<Down>")
-        else:
-            self.comboboxbuscar["values"] = ["No se encontraron resultados"]
-            self.comboboxbuscar.event_generate("<Down>")
-
-        self.cargar_articulos(filtro=typed)
-
-    # ---------------- Editar ----------------
     def editar_articulo(self):
-        selected_item = self.comboboxbuscar.get()
-
-        if not selected_item:
-            messagebox.showerror("Error", "Selecciona un artículo para editar")
+        if not self._puede_editar():
             return
-
-        self.cur.execute(
-            "SELECT articulo, precio, costo, stock, estado, image_path FROM articulos WHERE articulo = ?",
-            (selected_item,),
-        )
-        resultado = self.cur.fetchone()
-
-        if not resultado:
-            messagebox.showerror("Error", "Artículo no encontrado")
+        p = self.producto(self.seleccionado)
+        if p is None:
+            messagebox.showwarning("Inventario", "Seleccione un producto (haga clic en su tarjeta).", parent=self)
             return
+        FormularioProducto(self, p)
 
-        self.image_path = None
+    def exportar(self):
+        """Guarda el inventario completo en un CSV que abre Excel."""
+        filas = db.consultar("SELECT codigo, articulo, precio, costo, stock, stock_minimo, iva, estado "
+                             "FROM articulos ORDER BY articulo")
+        os.makedirs("reportes", exist_ok=True)
+        ruta = os.path.join("reportes", f"inventario_{datetime.date.today().isoformat()}.csv")
+        # utf-8-sig: Excel abre bien las tildes.
+        with open(ruta, "w", newline="", encoding="utf-8-sig") as archivo:
+            w = csv.writer(archivo)
+            w.writerow(["Código", "Producto", "Precio", "Costo", "Stock", "Stock mínimo", "IVA", "Estado",
+                        "Valor del stock al costo"])
+            for f in filas:
+                w.writerow(list(f) + [round(f[3] * f[4], 2)])
+        if messagebox.askyesno("Inventario exportado", f"Se exportaron {len(filas)} productos a:\n{ruta}\n\n"
+                                                       "¿Abrir la carpeta?", parent=self):
+            os.startfile(os.path.abspath("reportes"))
 
-        top = tk.Toplevel(self)
-        top.title("Editar artículo")
-        top.geometry("700x400+200+50")
-        top.config(bg=COLOR_FONDO)
-        top.resizable(False, False)
-        top.transient(self.master)
-        top.grab_set()
-        top.focus_set()
-        top.lift()
+    def _editar_id(self, id_producto):
+        self.seleccionar(id_producto)
+        self.editar_articulo()
 
-        # Corrección (guía, video 5, [2:17:05]): el orden de las variables tiene que ser
-        # el mismo orden de las columnas del SELECT.
-        (articulo, precio, costo, stock, estado, image_path) = resultado
 
-        label_articulo = tk.Label(top, text="Artículo: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_articulo.place(x=20, y=20, width=80, height=25)
-        entry_articulo = ttk.Entry(top, font="arial 12 bold")
-        entry_articulo.place(x=120, y=20, width=250, height=30)
-        entry_articulo.insert(0, articulo)
+def _nombre_archivo(texto):
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "_", texto).strip("_")[:40] or "producto"
 
-        label_precio = tk.Label(top, text="Precio: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_precio.place(x=20, y=60, width=80, height=25)
-        entry_precio = ttk.Entry(top, font="arial 12 bold")
-        entry_precio.place(x=120, y=60, width=250, height=30)
-        entry_precio.insert(0, f"{precio:.2f}")
 
-        label_costo = tk.Label(top, text="Costo: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_costo.place(x=20, y=100, width=80, height=25)
-        entry_costo = ttk.Entry(top, font="arial 12 bold")
-        entry_costo.place(x=120, y=100, width=250, height=30)
-        entry_costo.insert(0, f"{costo:.2f}")
+class FormularioProducto:
+    """Mismo formulario para crear y para editar un producto."""
 
-        label_stock = tk.Label(top, text="Stock: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_stock.place(x=20, y=140, width=80, height=25)
-        entry_stock = ttk.Entry(top, font="arial 12 bold")
-        entry_stock.place(x=120, y=140, width=250, height=30)
-        entry_stock.insert(0, stock)
+    OPCIONES_IVA = ["Gravado 15 %", "Exento"]
 
-        label_estado = tk.Label(top, text="Estado: ", font="arial 12 bold", bg=COLOR_FONDO)
-        label_estado.place(x=20, y=180, width=80, height=25)
-        entry_estado = ttk.Combobox(top, font="arial 12 bold", values=["Activo", "Inactivo"], state="readonly")
-        entry_estado.place(x=120, y=180, width=250, height=30)
-        # Un Combobox de solo lectura no acepta insert(): se usa set().
-        entry_estado.set(estado)
+    def __init__(self, inventario, producto=None):
+        self.inv = inventario
+        self.producto = producto
+        self.imagen_nueva = None
+        titulo = "Editar producto" if producto else "Nuevo producto"
+        top = self.top = ventana_modal(inventario, titulo, 720, 520)
+        top.formulario = self
+        etiqueta(top, titulo, F_TITULO, TEXTO).place(x=28, y=18)
 
-        self.frameimg = tk.Frame(top, bg="white", highlightbackground="gray", highlightthickness=1)
-        self.frameimg.place(x=440, y=30, width=200, height=200)
+        self.e = {}
+        self._fila("articulo", "Nombre del producto *", 28, 70, 416)
+        self._fila("codigo", "Código de barras", 28, 140, 300)
+        boton(top, "Generar código", self.generar_codigo, "secundario", F_PEQUE).place(x=336, y=160, width=108, height=36)
+        self._fila("precio", "Precio de venta (C$, IVA incluido) *", 28, 210, 200)
+        self._fila("costo", "Costo (C$) *", 244, 210, 200)
+        self._fila("stock", "Stock *", 28, 280, 200)
+        self._fila("stock_minimo", "Stock mínimo (alerta)", 244, 280, 200)
+        self._fila("iva", "IVA", 28, 350, 200, lista(top, values=self.OPCIONES_IVA, state="readonly"))
+        self._fila("estado", "Estado", 244, 350, 200, lista(top, values=["Activo", "Inactivo"], state="readonly"))
 
-        if image_path and os.path.exists(image_path):
-            image = Image.open(image_path)
-            image = image.resize((200, 200), Image.LANCZOS)
-            self.product_image = ImageTk.PhotoImage(image)
-            image_label = tk.Label(self.frameimg, image=self.product_image)
-            image_label.pack(expand=True, fill="both")
+        marco = tk.Frame(top, bg=CLARO, highlightthickness=1, highlightbackground=BORDE)
+        marco.place(x=480, y=70, width=210, height=210)
+        self.lbl_img = tk.Label(marco, bg=CLARO)
+        self.lbl_img.place(relx=0.5, rely=0.5, anchor="center")
+        boton(top, "Cargar imagen", self.cargar_imagen, "secundario").place(x=480, y=292, width=210, height=36)
 
-        btnimage = tk.Button(top, text="Cargar imagen", font="arial 12 bold", command=self.load_image)
-        btnimage.place(x=470, y=260, width=150, height=40)
+        self.lbl_error = etiqueta(top, "", F_PEQUE, ROJO, wraplength=416, justify="left")
+        self.lbl_error.place(x=28, y=424)
+        boton(top, "Cancelar", top.destroy, "secundario").place(x=400, y=458, width=130, height=42)
+        self.btn_guardar = boton(top, "Guardar", self.guardar)
+        self.btn_guardar.place(x=540, y=458, width=150, height=42)
+        top.bind("<Escape>", lambda e: top.destroy())
 
-        def guardar():
-            nuevo_articulo = entry_articulo.get().strip()
-            precio = entry_precio.get()
-            costo = entry_costo.get()
-            stock = entry_stock.get()
-            estado = entry_estado.get()
+        if producto:
+            for clave in ("articulo", "codigo"):
+                self.e[clave].insert(0, producto[clave] or "")
+            self.e["precio"].insert(0, f"{producto['precio']:.2f}")
+            self.e["costo"].insert(0, f"{producto['costo']:.2f}")
+            self.e["stock"].insert(0, str(producto["stock"]))
+            self.e["stock_minimo"].insert(0, str(producto["stock_minimo"]))
+            self.e["iva"].set(self.OPCIONES_IVA[0] if producto["iva"] else self.OPCIONES_IVA[1])
+            self.e["estado"].set(producto["estado"])
+        else:
+            self.e["stock"].insert(0, "0")
+            self.e["stock_minimo"].insert(0, "5")
+            self.e["iva"].set(self.OPCIONES_IVA[0])
+            self.e["estado"].set("Activo")
+        self.mostrar_imagen(producto["image_path"] if producto else None)
+        self.e["articulo"].focus_set()
 
-            if not nuevo_articulo or not precio or not costo or not stock or not estado:
-                messagebox.showerror("Error", "Todos los campos deben ser completados")
-                return
+    def _fila(self, clave, texto, x, y, ancho, widget=None):
+        etiqueta(self.top, texto, F_PEQUE, TEXTO_SUAVE).place(x=x, y=y)
+        w = widget or campo(self.top)
+        w.place(x=x, y=y + 20, width=ancho, height=36)
+        if widget is None:
+            w.bind("<Return>", lambda e: self.guardar())
+        self.e[clave] = w
 
+    def mostrar_imagen(self, ruta):
+        try:
+            img = Image.open(ruta if ruta and os.path.exists(ruta) else FOTO_DEFECTO)
+        except OSError:
+            img = Image.open(FOTO_DEFECTO)
+        self.foto = ImageTk.PhotoImage(ImageOps.fit(img.convert("RGB"), (200, 200)))
+        self.lbl_img.config(image=self.foto)
+
+    def cargar_imagen(self):
+        ruta = filedialog.askopenfilename(parent=self.top, title="Elegir imagen del producto",
+                                          filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.gif *.bmp *.webp")])
+        if ruta:
+            self.imagen_nueva = ruta
+            self.mostrar_imagen(ruta)
+
+    def generar_codigo(self):
+        usados = {f[0] for f in db.consultar("SELECT codigo FROM articulos WHERE codigo LIKE '200%'")}
+        numero = 1
+        while codigo_interno(numero) in usados:
+            numero += 1
+        self.e["codigo"].delete(0, "end")
+        self.e["codigo"].insert(0, codigo_interno(numero))
+
+    def guardar(self):
+        v = {clave: w.get().strip() for clave, w in self.e.items()}
+        try:
+            if not v["articulo"]:
+                raise ValueError("Escriba el nombre del producto.")
+            precio = round(float(v["precio"].replace(",", "")), 2)
+            costo = round(float(v["costo"].replace(",", "")), 2)
+            stock = int(v["stock"])
+            minimo = int(v["stock_minimo"] or 0)
+        except ValueError as e:
+            self.lbl_error.config(text=str(e) if "nombre" in str(e) else
+                                  "Revise los números: precio y costo con decimales (ej. 25.50); stock y stock "
+                                  "mínimo enteros.")
+            return
+        if precio <= 0 or costo < 0 or stock < 0 or minimo < 0:
+            self.lbl_error.config(text="El precio debe ser mayor que 0; costo, stock y stock mínimo no pueden ser "
+                                       "negativos.")
+            return
+        codigo = v["codigo"] or None
+        if codigo and not re.fullmatch(r"[0-9A-Za-z-]{1,20}", codigo):
+            self.lbl_error.config(text="El código solo puede tener letras, números y guiones (máximo 20).")
+            return
+        iva = 15 if v["iva"] == self.OPCIONES_IVA[0] else 0
+
+        ruta = self.producto["image_path"] if self.producto else FOTO_DEFECTO
+        if self.imagen_nueva:
             try:
-                precio = round(float(precio), 2)
-                costo = round(float(costo), 2)
-                stock = int(stock)
-            except ValueError:
-                messagebox.showerror("Error", "Precio, costo y stock deben ser números válidos")
+                img = ImageOps.fit(Image.open(self.imagen_nueva).convert("RGB"), (300, 300))
+                # Nombre único: dos productos con una foto llamada igual no se pisan.
+                ruta = os.path.join(CARPETA_FOTOS, f"{_nombre_archivo(v['articulo'])}_{uuid.uuid4().hex[:6]}.png")
+                img.save(ruta)
+            except OSError as e:
+                self.lbl_error.config(text=f"No se pudo usar esa imagen: {e}")
                 return
 
-            if self.image_path:
-                nueva_imagen = self.image_path
+        datos = (codigo, v["articulo"], precio, costo, stock, minimo, iva, v["estado"], ruta)
+        try:
+            with db.conectar() as conn:
+                if self.producto:
+                    conn.execute("UPDATE articulos SET codigo = ?, articulo = ?, precio = ?, costo = ?, stock = ?, "
+                                 "stock_minimo = ?, iva = ?, estado = ?, image_path = ? WHERE id = ?",
+                                 datos + (self.producto["id"],))
+                    id_producto = self.producto["id"]
+                else:
+                    cur = conn.execute("INSERT INTO articulos (codigo, articulo, precio, costo, stock, stock_minimo, "
+                                       "iva, estado, image_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", datos)
+                    id_producto = cur.lastrowid
+        except sqlite3.IntegrityError as e:
+            texto = str(e)
+            if "articulos.articulo" in texto:
+                self.lbl_error.config(text="Ya existe un producto con ese nombre.")
+            elif "articulos.codigo" in texto:
+                self.lbl_error.config(text="Ese código de barras ya está asignado a otro producto.")
             else:
-                nueva_imagen = image_path
+                self.lbl_error.config(text=f"Datos no válidos: {texto}")
+            return
+        except sqlite3.Error as e:
+            self.lbl_error.config(text=f"No se pudo guardar: {e}")
+            return
 
-            try:
-                self.cur.execute(
-                    "UPDATE articulos SET articulo = ?, precio = ?, costo = ?, stock = ?, estado = ?, "
-                    "image_path = ? WHERE articulo = ?",
-                    (nuevo_articulo, precio, costo, stock, estado, nueva_imagen, selected_item),
-                )
-                self.con.commit()
-            except sqlite3.IntegrityError as e:
-                self.con.rollback()
-                messagebox.showerror("Error", mensaje_integridad(e))
-                return
-            except sqlite3.Error as e:
-                self.con.rollback()
-                messagebox.showerror("Error", f"Error al editar el artículo: {e}")
-                return
-
-            self.articulos_combobox()
-            self.comboboxbuscar.set(nuevo_articulo)
-            self.actualizar_label()
-            self.after(0, lambda: self.cargar_articulos(filtro=nuevo_articulo))
-            top.destroy()
-            messagebox.showinfo("Éxito", "Artículo editado exitosamente")
-
-        btn_guardar = tk.Button(top, text="Guardar", font="arial 12 bold", command=guardar)
-        btn_guardar.place(x=260, y=260, width=150, height=40)
+        self.top.destroy()
+        self.inv.seleccionado = id_producto
+        self.inv.refrescar()

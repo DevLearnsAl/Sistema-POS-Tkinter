@@ -1,688 +1,701 @@
-import os
-import sqlite3
 import datetime
+import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+import caja
+import db
+import factura
+from estilos import (FONDO, BLANCO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, VERDE_FONDO, ROJO, FUENTE, F_NORMAL,
+                     F_PEQUE, F_NEGRITA, F_SUBTITULO, F_TITULO, F_GRANDE, F_CAMPO, moneda, boton, cambiar_tipo,
+                     panel, etiqueta, campo, lista, tabla, llenar_tabla, ventana_modal)
+from utilidades import buscar_producto, calcular_linea, fecha_corta
 
-db_name = "database.db"
-COLOR_FONDO = "#C6D9E3"
+TECLAS_NAVEGACION = {"Return", "KP_Enter", "Up", "Down", "Left", "Right", "Escape", "Tab", "Shift_L",
+                     "Shift_R", "Control_L", "Control_R", "Alt_L", "F12"}
+
+
+class StockInsuficiente(Exception):
+    def __init__(self, articulo, disponible):
+        super().__init__(articulo)
+        self.articulo = articulo
+        self.disponible = disponible
+
+
+class CajaCerrada(Exception):
+    """El turno se cerró entre que se abrió el cobro y se confirmó el pago."""
 
 
 class Ventas(tk.Frame):
-    def __init__(self, padre):
-        super().__init__(padre)
-        self.numero_factura = self.obtener_numero_factura_actual()
-        self.productos_seleccionados = []
-        self.products = []
+    def __init__(self, padre, controlador):
+        super().__init__(padre, bg=FONDO)
+        self.controlador = controlador
+        self.carrito = []        # cada línea es un dict; la tabla solo la muestra
+        self.caja_actual = None  # turno de caja abierto (sin turno no se puede cobrar)
+        self.productos = {}      # nombre -> datos
+        self.por_codigo = {}     # código de barras -> nombre
+        self.nombres = []
         self.clientes = []
         self.timer_producto = None
         self.timer_cliente = None
         self.widgets()
-        self.cargar_productos()
-        self.cargar_clientes()
+        controlador.bind("<F12>", self._atajo_cobrar, add="+")
 
+    # ------------------------------------------------------------------ interfaz
+    def widgets(self):
+        p = panel(self, "Nueva venta")
+        p.place(x=16, y=16, width=720, height=186)
+
+        etiqueta(p, "Cliente", F_PEQUE, TEXTO_SUAVE).place(x=16, y=46)
+        self.entry_cliente = lista(p)
+        self.entry_cliente.place(x=16, y=68, width=300, height=36)
+        self.entry_cliente.bind("<KeyRelease>", self._programar_filtro_clientes)
+
+        etiqueta(p, "Próxima factura", F_PEQUE, TEXTO_SUAVE).place(x=560, y=46)
+        self.lbl_factura = etiqueta(p, "N° —", F_SUBTITULO, NAVY)
+        self.lbl_factura.place(x=560, y=70)
+
+        etiqueta(p, "Código de barras o producto", F_PEQUE, TEXTO_SUAVE).place(x=16, y=112)
+        self.entry_producto = lista(p)
+        self.entry_producto.place(x=16, y=134, width=300, height=36)
+        self.entry_producto.bind("<KeyRelease>", self._programar_filtro_productos)
+        self.entry_producto.bind("<Return>", lambda e: self.agregar_articulo())
+        self.entry_producto.bind("<KP_Enter>", lambda e: self.agregar_articulo())
+        self.entry_producto.bind("<<ComboboxSelected>>", lambda e: self.mostrar_info())
+
+        etiqueta(p, "Cantidad", F_PEQUE, TEXTO_SUAVE).place(x=330, y=112)
+        self.entry_cantidad = ttk.Spinbox(p, from_=1, to=9999, font=F_CAMPO)
+        self.entry_cantidad.place(x=330, y=134, width=90, height=36)
+        self.entry_cantidad.set(1)
+        self.entry_cantidad.bind("<Return>", lambda e: self.agregar_articulo())
+
+        self.btn_agregar = boton(p, "Agregar", self.agregar_articulo)
+        self.btn_agregar.place(x=434, y=134, width=110, height=36)
+        self.lbl_info = etiqueta(p, "", F_PEQUE, TEXTO_SUAVE, justify="left", anchor="nw")
+        self.lbl_info.place(x=560, y=122, width=150, height=54)
+
+        # ---- Productos de la venta ----
+        c = panel(self, "Productos en la venta")
+        c.place(x=16, y=214, width=720, height=376)
+        columnas = [("n", "#", 40, "center"), ("codigo", "Código", 120, "center"), ("producto", "Producto", 196, "w"),
+                    ("precio", "Precio", 86, "e"), ("cant", "Cant.", 56, "center"), ("iva", "IVA", 80, "e"),
+                    ("total", "Total", 96, "e")]
+        marco, self.tree = tabla(c, columnas)
+        marco.place(x=16, y=44, width=688, height=270)
+        self.tree.bind("<Delete>", lambda e: self.eliminar_articulo())
+        self.tree.bind("<Double-1>", lambda e: self.editar_articulo())
+
+        boton(c, "Cambiar cantidad", self.editar_articulo, "secundario").place(x=16, y=326, width=160, height=36)
+        boton(c, "Quitar producto", self.eliminar_articulo, "secundario").place(x=186, y=326, width=150, height=36)
+        boton(c, "Vaciar venta", self.vaciar, "peligro").place(x=346, y=326, width=130, height=36)
+        etiqueta(c, "Supr: quitar  ·  F12: cobrar", F_PEQUE, TEXTO_SUAVE).place(x=704, y=334, anchor="ne")
+
+        # ---- Resumen ----
+        r = panel(self, "Resumen")
+        r.place(x=752, y=16, width=332, height=574)
+        filas = [("Artículos", "lbl_articulos"), ("Subtotal (sin IVA)", "lbl_subtotal"), ("IVA", "lbl_iva")]
+        for i, (texto, atributo) in enumerate(filas):
+            y = 56 + i * 34
+            etiqueta(r, texto, F_NORMAL, TEXTO_SUAVE).place(x=16, y=y)
+            lbl = etiqueta(r, "0", F_NEGRITA, TEXTO)
+            lbl.place(x=314, y=y, anchor="ne")
+            setattr(self, atributo, lbl)
+        tk.Frame(r, bg=BORDE).place(x=16, y=164, width=298, height=1)
+        etiqueta(r, "Total a pagar", F_NORMAL, TEXTO_SUAVE).place(x=16, y=178)
+        self.label_precio_total = etiqueta(r, moneda(0), F_GRANDE, NAVY)
+        self.label_precio_total.place(x=314, y=200, anchor="ne")
+
+        self.btn_cobrar = boton(r, "Cobrar   (F12)", self.realizar_pago, "exito", (FUENTE, 14, "bold"))
+        self.btn_cobrar.place(x=16, y=268, width=298, height=54)
+        boton(r, "Ventas realizadas", self.ver_ventas_realizadas, "secundario").place(x=16, y=334, width=298, height=40)
+        tk.Frame(r, bg=BORDE).place(x=16, y=392, width=298, height=1)
+        etiqueta(r, "Los precios incluyen IVA. Los productos de la canasta básica están exentos.",
+                 F_PEQUE, TEXTO_SUAVE, wraplength=296, justify="left").place(x=16, y=404)
+        self.lbl_cajero = etiqueta(r, "", F_PEQUE, TEXTO_SUAVE, justify="left")
+        self.lbl_cajero.place(x=16, y=520)
+
+        self.refrescar_carrito()
+
+    # ------------------------------------------------------------------ datos
     def al_mostrar(self):
         self.cargar_productos()
         self.cargar_clientes()
+        self.actualizar_numero_factura()
+        self.actualizar_caja()
+        self.entry_producto.focus_set()
 
-    # ---------------- Interfaz (video 6) ----------------
-    def widgets(self):
-        labelframe = tk.LabelFrame(self, font="sans 12 bold", bg=COLOR_FONDO)
-        labelframe.place(x=25, y=30, width=1045, height=180)
-
-        label_cliente = tk.Label(labelframe, text="Cliente: ", font="sans 14 bold", bg=COLOR_FONDO)
-        label_cliente.place(x=10, y=11)
-        self.entry_cliente = ttk.Combobox(labelframe, font="sans 14 bold")
-        self.entry_cliente.place(x=120, y=8, width=260, height=40)
-        self.entry_cliente.bind("<KeyRelease>", self.filtrar_clientes)
-
-        label_producto = tk.Label(labelframe, text="Producto: ", font="sans 14 bold", bg=COLOR_FONDO)
-        label_producto.place(x=10, y=70)
-        self.entry_producto = ttk.Combobox(labelframe, font="sans 14 bold")
-        self.entry_producto.place(x=120, y=60, width=260, height=40)
-        self.entry_producto.bind("<KeyRelease>", self.filtrar_productos)
-        self.entry_producto.bind("<<ComboboxSelected>>", self.actualizar_stock)
-
-        label_cantidad = tk.Label(labelframe, text="Cantidad: ", font="sans 14 bold", bg=COLOR_FONDO)
-        label_cantidad.place(x=500, y=11)
-        self.entry_cantidad = ttk.Entry(labelframe, font="sans 14 bold")
-        self.entry_cantidad.place(x=610, y=8, width=100, height=40)
-
-        self.label_stock = tk.Label(labelframe, text="Stock: ", font="sans 14 bold", bg=COLOR_FONDO)
-        self.label_stock.place(x=500, y=70)
-
-        label_factura = tk.Label(labelframe, text="Número de factura", font="sans 14 bold", bg=COLOR_FONDO)
-        label_factura.place(x=750, y=11)
-        self.label_numero_factura = tk.Label(labelframe, text=f"{self.numero_factura}", font="sans 14 bold",
-                                             bg=COLOR_FONDO)
-        self.label_numero_factura.place(x=950, y=11)
-
-        boton_agregar = tk.Button(labelframe, text="Agregar artículo", font="sans 14 bold",
-                                  command=self.agregar_articulo)
-        boton_agregar.place(x=90, y=120, width=200, height=40)
-
-        boton_eliminar = tk.Button(labelframe, text="Eliminar artículo", font="sans 14 bold",
-                                   command=self.eliminar_articulo)
-        boton_eliminar.place(x=310, y=120, width=200, height=40)
-
-        boton_editar = tk.Button(labelframe, text="Editar artículo", font="sans 14 bold",
-                                 command=self.editar_articulo)
-        boton_editar.place(x=530, y=120, width=200, height=40)
-
-        boton_limpiar = tk.Button(labelframe, text="Limpiar lista", font="sans 14 bold",
-                                  command=self.limpiar_lista)
-        boton_limpiar.place(x=750, y=120, width=200, height=40)
-
-        # ---- Tabla del carrito ----
-        treFrame = tk.Frame(self, bg="white")
-        treFrame.place(x=70, y=220, width=980, height=300)
-
-        scrol_y = ttk.Scrollbar(treFrame)
-        scrol_y.pack(side="right", fill="y")
-
-        # Corrección (guía, video 6, [0:37:54]): sin orient="horizontal" la barra sale vertical.
-        scrol_x = ttk.Scrollbar(treFrame, orient="horizontal")
-        scrol_x.pack(side="bottom", fill="x")
-
-        # Corrección (guía, video 6, [0:35:49]): los nombres de columns tienen que ser
-        # exactamente los mismos que se usan en heading() y column().
-        self.tre = ttk.Treeview(treFrame, yscrollcommand=scrol_y.set, xscrollcommand=scrol_x.set, height=40,
-                                columns=("Factura", "Cliente", "Producto", "Precio", "Cantidad", "Total"),
-                                show="headings")
-        self.tre.pack(expand=True, fill="both")
-
-        scrol_y.config(command=self.tre.yview)
-        scrol_x.config(command=self.tre.xview)
-
-        self.tre.heading("Factura", text="Factura")
-        self.tre.heading("Cliente", text="Cliente")
-        self.tre.heading("Producto", text="Producto")
-        self.tre.heading("Precio", text="Precio")
-        self.tre.heading("Cantidad", text="Cantidad")
-        self.tre.heading("Total", text="Total")
-
-        self.tre.column("Factura", width=70, anchor="center")
-        self.tre.column("Cliente", width=250, anchor="center")
-        self.tre.column("Producto", width=250, anchor="center")
-        self.tre.column("Precio", width=120, anchor="center")
-        self.tre.column("Cantidad", width=120, anchor="center")
-        self.tre.column("Total", width=150, anchor="center")
-
-        # Corrección (guía, video 6): C$ en vez de $, y dos decimales.
-        self.label_precio_total = tk.Label(self, text="Precio a pagar: C$ 0.00", font="sans 18 bold",
-                                           bg=COLOR_FONDO)
-        self.label_precio_total.place(x=680, y=550)
-
-        # Corrección (guía, video 7, [1:48:54]): el botón Pagar necesita su command.
-        boton_pagar = tk.Button(self, text="Pagar", font="sans 14 bold", command=self.realizar_pago)
-        boton_pagar.place(x=70, y=550, width=180, height=40)
-
-        boton_ver_ventas = tk.Button(self, text="Ver ventas realizadas", font="sans 14 bold",
-                                     command=self.ver_ventas_realizadas)
-        boton_ver_ventas.place(x=290, y=550, width=280, height=40)
-
-    # ---------------- Carga de datos (video 7) ----------------
-    def obtener_numero_factura_actual(self):
-        # Igual que en el curso: la siguiente factura es la mayor + 1.
-        # Funciona con una sola caja; con dos cajas sobre la misma base podrían
-        # salir números repetidos (queda para después del curso).
-        try:
-            conn = sqlite3.connect(db_name)
-            c = conn.cursor()
-            c.execute("SELECT MAX(factura) FROM ventas")
-            last_invoice_number = c.fetchone()[0]
-            conn.close()
-            return last_invoice_number + 1 if last_invoice_number is not None else 1
-        except sqlite3.Error as e:
-            print("Error obteniendo el número de factura actual:", e)
-            return 1
+    def actualizar_caja(self):
+        """Muestra el turno de caja y bloquea el cobro si no hay ninguno abierto."""
+        fila = caja.caja_abierta()
+        self.caja_actual = fila[0] if fila else None
+        usuario = self.controlador.usuario_actual or "—"
+        estado = f"Caja abierta por {fila[1]} ({fila[3][:5]})" if fila else "Caja cerrada · abrila para cobrar"
+        self.lbl_cajero.config(text=f"Cajero: {usuario}\n{datetime.date.today():%d/%m/%Y}\n{estado}",
+                               fg=TEXTO_SUAVE if fila else ROJO)
 
     def cargar_productos(self):
-        try:
-            conn = sqlite3.connect(db_name)
-            c = conn.cursor()
-            # Corrección extra: solo se venden productos activos. "Inactivo" significa
-            # que ya no se vende (video 1), pero en el video igual aparecían aquí.
-            c.execute("SELECT articulo FROM articulos WHERE estado = 'Activo'")
-            self.products = [product[0] for product in c.fetchall()]
-            self.entry_producto["values"] = self.products
-            conn.close()
-        except sqlite3.Error as e:
-            print("Error cargando productos:", e)
+        filas = db.consultar("SELECT articulo, codigo, precio, costo, stock, iva FROM articulos "
+                             "WHERE estado = 'Activo' ORDER BY articulo")
+        self.productos = {f[0]: {"codigo": f[1] or "", "precio": f[2], "costo": f[3], "stock": f[4], "iva": f[5]}
+                          for f in filas}
+        self.por_codigo = {d["codigo"]: nombre for nombre, d in self.productos.items() if d["codigo"]}
+        self.nombres = list(self.productos)
+        self.entry_producto["values"] = self.nombres
 
     def cargar_clientes(self):
-        try:
-            conn = sqlite3.connect(db_name)
-            c = conn.cursor()
-            c.execute("SELECT nombre FROM clientes")
-            self.clientes = [cliente[0] for cliente in c.fetchall()]
-            self.entry_cliente["values"] = self.clientes
-            conn.close()
-        except sqlite3.Error as e:
-            print("Error cargando clientes:", e)
-
-        # Corrección (guía, video 10): "Consumidor final" por defecto.
+        filas = db.consultar("SELECT nombre FROM clientes WHERE activo = 1 "
+                             "ORDER BY nombre = 'Consumidor final' DESC, nombre")
+        self.clientes = [f[0] for f in filas]
+        self.entry_cliente["values"] = self.clientes
         if not self.entry_cliente.get():
             self.entry_cliente.set("Consumidor final")
 
-    # ---------------- Filtros mientras se escribe ----------------
-    # Corrección (guía, video 5): self.after en vez de threading.Timer.
-    def filtrar_productos(self, event):
+    def actualizar_numero_factura(self):
+        numero = db.uno("SELECT COALESCE(MAX(factura), 0) + 1 FROM ventas")[0]
+        self.lbl_factura.config(text=f"N° {numero:06d}")
+
+    # ------------------------------------------------------------------ búsqueda
+    def _programar_filtro_productos(self, event):
+        if event.keysym in TECLAS_NAVEGACION:
+            return
         if self.timer_producto:
             self.after_cancel(self.timer_producto)
-        self.timer_producto = self.after(500, self.filter_products)
+        self.timer_producto = self.after(250, self._filtrar_productos)
 
-    def filter_products(self):
+    def _filtrar_productos(self):
         self.timer_producto = None
-        typed = self.entry_producto.get()
-
-        if typed == "":
-            data = self.products
+        texto = self.entry_producto.get().strip().lower()
+        if not texto:
+            self.entry_producto["values"] = self.nombres
         else:
-            data = [item for item in self.products if typed.lower() in item.lower()]
+            self.entry_producto["values"] = [n for n in self.nombres if texto in n.lower()
+                                             or self.productos[n]["codigo"].startswith(texto)]
+        self.mostrar_info()
 
-        if data:
-            self.entry_producto["values"] = data
-            self.entry_producto.event_generate("<Down>")
-        else:
-            self.entry_producto["values"] = ["No se encontraron resultados"]
-            self.entry_producto.event_generate("<Down>")
-            self.entry_producto.delete(0, tk.END)
-
-    def filtrar_clientes(self, event):
+    def _programar_filtro_clientes(self, event):
+        if event.keysym in TECLAS_NAVEGACION:
+            return
         if self.timer_cliente:
             self.after_cancel(self.timer_cliente)
-        self.timer_cliente = self.after(500, self.filter_clientes)
+        self.timer_cliente = self.after(250, self._filtrar_clientes)
 
-    def filter_clientes(self):
+    def _filtrar_clientes(self):
         self.timer_cliente = None
-        typed = self.entry_cliente.get()
+        texto = self.entry_cliente.get().strip().lower()
+        self.entry_cliente["values"] = [c for c in self.clientes if texto in c.lower()] if texto else self.clientes
 
-        if typed == "":
-            data = self.clientes
-        else:
-            data = [item for item in self.clientes if typed.lower() in item.lower()]
+    def buscar_producto(self, texto, parcial=True):
+        return buscar_producto(texto, self.nombres, self.por_codigo, parcial)
 
-        if data:
-            self.entry_cliente["values"] = data
-            self.entry_cliente.event_generate("<Down>")
-        else:
-            self.entry_cliente["values"] = ["No se encontraron resultados"]
-            self.entry_cliente.event_generate("<Down>")
-            self.entry_cliente.delete(0, tk.END)
+    def mostrar_info(self):
+        nombre = self.buscar_producto(self.entry_producto.get(), parcial=False)
+        if not nombre:
+            self.lbl_info.config(text="")
+            return
+        d = self.productos[nombre]
+        iva = f"IVA {d['iva']:.0f} %" if d["iva"] else "Exento de IVA"
+        self.lbl_info.config(text=f"Precio {moneda(d['precio'])}\nDisponible: {d['stock']}\n{iva}")
 
-    # ---------------- Carrito ----------------
+    # ------------------------------------------------------------------ carrito
+    def aviso(self, mensaje):
+        messagebox.showwarning("Ventas", mensaje, parent=self)
+
+    @staticmethod
+    def _recalcular(linea):
+        linea["total"], linea["iva"] = calcular_linea(linea["precio"], linea["cantidad"], linea["tasa"])
+
     def agregar_articulo(self):
-        cliente = self.entry_cliente.get()
-        producto = self.entry_producto.get()
-        cantidad = self.entry_cantidad.get()
-
-        if not cliente:
-            messagebox.showerror("Error", "Por favor seleccione un cliente.")
+        texto = self.entry_producto.get()
+        if not texto.strip():
+            self.aviso("Escriba el código de barras o elija un producto.")
             return
-
-        if not producto:
-            messagebox.showerror("Error", "Por favor seleccione un producto.")
+        nombre = self.buscar_producto(texto)
+        if not nombre:
+            self.aviso(f"No se encontró ningún producto activo con «{texto.strip()}».")
             return
-
-        if not cantidad.isdigit() or int(cantidad) <= 0:
-            messagebox.showerror("Error", "Por favor ingrese una cantidad válida.")
+        cantidad_texto = self.entry_cantidad.get().strip()
+        if not cantidad_texto.isdigit() or int(cantidad_texto) <= 0:
+            self.aviso("La cantidad debe ser un número entero mayor que cero.")
             return
+        cantidad = int(cantidad_texto)
 
-        cantidad = int(cantidad)
+        fila = db.uno("SELECT codigo, precio, costo, stock, iva, estado FROM articulos WHERE articulo = ?", (nombre,))
+        if fila is None or fila[5] != "Activo":
+            self.aviso("Ese producto ya no está disponible para la venta.")
+            self.cargar_productos()
+            return
+        codigo, precio, costo, stock, tasa, _ = fila
 
-        try:
-            conn = sqlite3.connect(db_name)
-            c = conn.cursor()
-            c.execute("SELECT precio, costo, stock FROM articulos WHERE articulo = ? AND estado = 'Activo'",
-                      (producto,))
-            resultado = c.fetchone()
-            conn.close()
-
-            if resultado is None:
-                messagebox.showerror("Error", "Producto no encontrado.")
-                return
-
-            precio, costo, stock = resultado
-
-            if cantidad > stock:
-                messagebox.showerror("Error", f"Stock insuficiente. Solo hay {stock} unidades disponibles.")
-                return
-
-            # Corrección (guía, video 7): {:,.2f} en vez de {:,.0f}. Con .0f un producto
-            # de C$ 12.50 aparecía y se cobraba como C$ 12.
-            total = precio * cantidad
-            total_cop = "{:,.2f}".format(total)
-
-            self.tre.insert("", "end", values=(self.numero_factura, cliente, producto,
-                                               "{:,.2f}".format(precio), cantidad, total_cop))
-            # Corrección (guía, video 7, [1:39:36]): una sola tupla dentro del append.
-            self.productos_seleccionados.append((self.numero_factura, cliente, producto, precio,
-                                                 cantidad, total_cop, costo))
-
-            self.entry_producto.set("")
-            self.entry_cantidad.delete(0, "end")
-            self.label_stock.config(text="Stock: ")
-        except sqlite3.Error as e:
-            print("Error al agregar artículo:", e)
-
-        self.calcular_precio_total()
-
-    def calcular_precio_total(self):
-        # Corrección (guía, video 7, [1:43:44]): str() antes de replace(), porque el
-        # Treeview a veces devuelve los valores como número y no como texto.
-        total_pagar = sum(float(str(self.tre.item(item)["values"][-1]).replace(",", ""))
-                          for item in self.tre.get_children())
-        total_pagar_cop = "{:,.2f}".format(total_pagar)
-        self.label_precio_total.config(text=f"Precio a pagar: C$ {total_pagar_cop}")
-
-    def actualizar_stock(self, event=None):
-        producto_seleccionado = self.entry_producto.get()
-
-        try:
-            conn = sqlite3.connect(db_name)
-            c = conn.cursor()
-            c.execute("SELECT stock FROM articulos WHERE articulo = ?", (producto_seleccionado,))
-            resultado = c.fetchone()
-            conn.close()
-
-            # Corrección extra: si se elige "No se encontraron resultados", fetchone()
-            # devuelve None y en el video el programa fallaba al hacer stock[0].
-            if resultado:
-                self.label_stock.config(text=f"Stock: {resultado[0]}")
+        # El stock se valida contra lo que ya hay de ese producto en la venta.
+        en_venta = sum(l["cantidad"] for l in self.carrito if l["articulo"] == nombre)
+        if en_venta + cantidad > stock:
+            if en_venta:
+                self.aviso(f"Stock insuficiente de «{nombre}».\n"
+                           f"Hay {stock} en inventario y ya agregó {en_venta} a esta venta.")
             else:
-                self.label_stock.config(text="Stock: ")
-        except sqlite3.Error as e:
-            print("Error al obtener el stock del producto:", e)
-
-    def eliminar_articulo(self):
-        item_seleccionado = self.tre.selection()
-        if not item_seleccionado:
-            messagebox.showerror("Error", "No hay ningún artículo seleccionado.")
+                self.aviso(f"Stock insuficiente de «{nombre}». Disponible: {stock}.")
             return
 
-        item_id = item_seleccionado[0]
-        # Corrección extra: en el video se borraban de la lista todos los productos con
-        # el mismo nombre. Si agregaste Coca-Cola dos veces y eliminabas una línea, la
-        # tabla mostraba una pero se cobraban cero. La fila de la tabla y la de la lista
-        # están en la misma posición, así que se borra por posición.
-        posicion = self.tre.index(item_id)
-        self.tre.delete(item_id)
-        del self.productos_seleccionados[posicion]
+        linea = next((l for l in self.carrito if l["articulo"] == nombre), None)
+        if linea:
+            linea["cantidad"] += cantidad
+        else:
+            linea = {"codigo": codigo or "", "articulo": nombre, "precio": precio, "costo": costo, "tasa": tasa,
+                     "cantidad": cantidad}
+            self.carrito.append(linea)
+        self._recalcular(linea)
+        self.refrescar_carrito(seleccionar=self.carrito.index(linea))
 
-        self.calcular_precio_total()
+        self.entry_producto.set("")
+        self.entry_producto["values"] = self.nombres
+        self.entry_cantidad.set(1)
+        self.lbl_info.config(text="")
+        self.entry_producto.focus_set()
+
+    def totales(self):
+        total = round(sum(l["total"] for l in self.carrito), 2)
+        iva = round(sum(l["iva"] for l in self.carrito), 2)
+        return {"articulos": sum(l["cantidad"] for l in self.carrito), "total": total, "iva": iva,
+                "subtotal": round(total - iva, 2)}
+
+    def refrescar_carrito(self, seleccionar=None):
+        filas = [(i + 1, l["codigo"], l["articulo"], moneda(l["precio"]), l["cantidad"], moneda(l["iva"]),
+                  moneda(l["total"])) for i, l in enumerate(self.carrito)]
+        llenar_tabla(self.tree, filas)
+        if seleccionar is not None and self.tree.get_children():
+            iid = self.tree.get_children()[seleccionar]
+            self.tree.selection_set(iid)
+            self.tree.see(iid)
+        t = self.totales()
+        self.lbl_articulos.config(text=str(t["articulos"]))
+        self.lbl_subtotal.config(text=moneda(t["subtotal"]))
+        self.lbl_iva.config(text=moneda(t["iva"]))
+        self.label_precio_total.config(text=moneda(t["total"]))
+
+    def _linea_seleccionada(self, accion):
+        seleccion = self.tree.selection()
+        if not seleccion:
+            self.aviso(f"Seleccione en la tabla el producto que quiere {accion}.")
+            return None
+        return self.tree.index(seleccion[0])
 
     def editar_articulo(self):
-        selected_item = self.tre.selection()
-        if not selected_item:
-            messagebox.showerror("Error", "Por favor seleccione un artículo para editar.")
+        i = self._linea_seleccionada("cambiar")
+        if i is None:
             return
-
-        item_values = self.tre.item(selected_item[0], "values")
-        if not item_values:
+        linea = self.carrito[i]
+        nueva = simpledialog.askinteger("Cambiar cantidad", f"Nueva cantidad de «{linea['articulo']}»:",
+                                        initialvalue=linea["cantidad"], minvalue=1, maxvalue=9999, parent=self)
+        if nueva is None:
             return
+        fila = db.uno("SELECT stock FROM articulos WHERE articulo = ?", (linea["articulo"],))
+        stock = fila[0] if fila else 0
+        if nueva > stock:
+            self.aviso(f"Stock insuficiente de «{linea['articulo']}». Disponible: {stock}.")
+            return
+        linea["cantidad"] = nueva
+        self._recalcular(linea)
+        self.refrescar_carrito(seleccionar=i)
 
-        posicion = self.tre.index(selected_item[0])
-        factura, cliente, producto, precio_anterior, cantidad_anterior, total_anterior, costo = \
-            self.productos_seleccionados[posicion]
+    def eliminar_articulo(self):
+        i = self._linea_seleccionada("quitar")
+        if i is None:
+            return
+        del self.carrito[i]
+        self.refrescar_carrito()
 
-        new_cantidad = simpledialog.askinteger("Editar artículo", "Ingrese la nueva cantidad:",
-                                               initialvalue=cantidad_anterior, minvalue=1, parent=self)
+    def vaciar(self, confirmar=True):
+        if not self.carrito:
+            return
+        if confirmar and not messagebox.askyesno("Vaciar venta", "¿Quitar todos los productos de esta venta?",
+                                                 parent=self):
+            return
+        self.carrito.clear()
+        self.refrescar_carrito()
 
-        if new_cantidad is not None:
-            try:
-                conn = sqlite3.connect(db_name)
-                c = conn.cursor()
-                c.execute("SELECT precio, costo, stock FROM articulos WHERE articulo = ?", (producto,))
-                resultado = c.fetchone()
-                conn.close()
+    # ------------------------------------------------------------------ cobro
+    def _atajo_cobrar(self, event=None):
+        if self.controlador.usuario_actual and getattr(self.master, "actual", None) is Ventas \
+                and not self.grab_current():
+            self.realizar_pago()
 
-                if resultado is None:
-                    messagebox.showerror("Error", "Producto no encontrado.")
-                    return
-
-                precio, costo, stock = resultado
-
-                if new_cantidad > stock:
-                    messagebox.showerror("Error", f"Stock insuficiente. Solo hay {stock} unidades disponibles.")
-                    return
-
-                total = precio * new_cantidad
-                total_cop = "{:,.2f}".format(total)
-
-                self.tre.item(selected_item[0], values=(factura, cliente, producto, "{:,.2f}".format(precio),
-                                                        new_cantidad, total_cop))
-                self.productos_seleccionados[posicion] = (factura, cliente, producto, precio, new_cantidad,
-                                                          total_cop, costo)
-                self.calcular_precio_total()
-            except sqlite3.Error as e:
-                print("Error al editar el artículo:", e)
-
-    def limpiar_lista(self):
-        self.tre.delete(*self.tre.get_children())
-        self.productos_seleccionados.clear()
-        self.calcular_precio_total()
-
-    def limpiar_campos(self):
-        for item in self.tre.get_children():
-            self.tre.delete(item)
-        self.label_precio_total.config(text="Precio a pagar: C$ 0.00")
-        self.entry_producto.set("")
-        self.entry_cantidad.delete(0, "end")
-        self.label_stock.config(text="Stock: ")
-        self.entry_cliente.set("Consumidor final")
-
-    # ---------------- Pago (video 7) ----------------
     def realizar_pago(self):
-        if not self.tre.get_children():
-            messagebox.showerror("Error", "No hay productos seleccionados para realizar el pago.")
+        if not self.carrito:
+            self.aviso("Agregue al menos un producto antes de cobrar.")
             return
+        self.actualizar_caja()
+        if not self.caja_actual:
+            # Sin turno abierto no hay dónde registrar el efectivo, así que se
+            # ofrece abrirlo y, si se abre, el cobro sigue solo.
+            if messagebox.askyesno("Caja cerrada",
+                                   "No hay un turno de caja abierto y la venta no se puede cobrar.\n\n"
+                                   "¿Quiere abrir la caja ahora?", parent=self):
+                caja.VentanaAbrirCaja(self, al_abrir=self.realizar_pago)
+            return
+        VentanaCobro(self, self.totales()["total"])
 
-        total_venta = sum(float(str(self.tre.item(item)["values"][5]).replace(",", ""))
-                          for item in self.tre.get_children())
-        total_formateado = "{:,.2f}".format(total_venta)
-
-        ventana_pago = tk.Toplevel(self)
-        ventana_pago.title("Realizar pago")
-        ventana_pago.geometry("400x400+450+80")
-        ventana_pago.config(bg=COLOR_FONDO)
-        ventana_pago.resizable(False, False)
-        ventana_pago.transient(self.master)
-        ventana_pago.grab_set()
-        ventana_pago.focus_set()
-        ventana_pago.lift()
-
-        label_titulo = tk.Label(ventana_pago, text="Realizar pago", font="sans 30 bold", bg=COLOR_FONDO)
-        label_titulo.place(x=70, y=10)
-
-        label_total = tk.Label(ventana_pago, text=f"Total a pagar: C$ {total_formateado}", font="sans 14 bold",
-                               bg=COLOR_FONDO)
-        label_total.place(x=80, y=100)
-
-        label_monto = tk.Label(ventana_pago, text="Ingrese el monto pagado:", font="sans 14 bold",
-                               bg=COLOR_FONDO)
-        label_monto.place(x=80, y=160)
-
-        entry_monto = ttk.Entry(ventana_pago, font="sans 14 bold")
-        entry_monto.place(x=80, y=210, width=240, height=40)
-        entry_monto.focus_set()
-
-        # Corrección (guía, video 7, [1:44:44]): con lambda, procesar_pago se ejecuta al
-        # hacer clic. Sin lambda se ejecutaría en esta línea, al abrir la ventana.
-        button_confirmar_pago = tk.Button(ventana_pago, text="Confirmar pago", font="sans 14 bold",
-                                          command=lambda: self.procesar_pago(entry_monto.get(), ventana_pago,
-                                                                             total_venta))
-        button_confirmar_pago.place(x=80, y=270, width=240, height=40)
-
-    def procesar_pago(self, cantidad_pagada, ventana_pago, total_venta):
+    def procesar_pago(self, recibido, metodo):
+        """Guarda la venta en una sola transacción. Devuelve los datos para el recibo, o None si no se guardó."""
+        if not self.carrito:
+            return None
+        usuario = self.controlador.usuario_actual or "—"
+        cliente = self.entry_cliente.get().strip() or "Consumidor final"
+        ahora = datetime.datetime.now()
+        fecha, hora = ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M:%S")
+        t = self.totales()
         try:
-            cantidad_pagada = float(cantidad_pagada)
-        except ValueError:
-            messagebox.showerror("Error", "Ingrese un monto válido.")
-            return
-
-        # Corrección extra: todas las líneas se guardan con el cliente que está elegido al
-        # cobrar. En el video cada línea guardaba el cliente que había al agregarla.
-        cliente = self.entry_cliente.get()
-
-        if cantidad_pagada < total_venta:
-            messagebox.showerror("Error", "La cantidad pagada es insuficiente.")
-            return
-
-        cambio = cantidad_pagada - total_venta
-        total_formateado = "{:,.2f}".format(total_venta)
-        mensaje = (f"Total: C$ {total_formateado}\n"
-                   f"Cantidad pagada: C$ {cantidad_pagada:,.2f}\n"
-                   f"Cambio: C$ {cambio:,.2f}")
-
-        fecha_actual = datetime.datetime.now().strftime("%Y-%m-%d")
-        hora_actual = datetime.datetime.now().strftime("%H:%M:%S")
-
-        conn = sqlite3.connect(db_name)
-        c = conn.cursor()
-        try:
-            for item in self.productos_seleccionados:
-                factura, _, producto, precio, cantidad, total, costo = item
-                # Corrección (guía, video 7, [1:45:45]): la cantidad también va en el INSERT.
-                c.execute(
-                    "INSERT INTO ventas (factura, cliente, articulo, precio, cantidad, total, costo, fecha, hora) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (self.numero_factura, cliente, producto, precio, cantidad,
-                     float(total.replace(",", "")), costo * cantidad, fecha_actual, hora_actual),
-                )
-                # Si esto deja el stock en negativo, el CHECK (stock >= 0) de la tabla
-                # lanza IntegrityError y se deshace toda la venta.
-                c.execute("UPDATE articulos SET stock = stock - ? WHERE articulo = ?", (cantidad, producto))
-            conn.commit()
+            with db.conectar() as conn:
+                # BEGIN IMMEDIATE bloquea la base mientras se asigna el número y se descuenta
+                # el stock: dos cajas no pueden sacar el mismo número de factura.
+                conn.execute("BEGIN IMMEDIATE")
+                # El turno se vuelve a leer adentro de la transacción: pudo cerrarse
+                # mientras la ventana de cobro estaba abierta.
+                fila_caja = conn.execute("SELECT id FROM cajas WHERE estado = 'ABIERTA'").fetchone()
+                if fila_caja is None:
+                    raise CajaCerrada
+                caja_id = fila_caja[0]
+                for l in self.carrito:
+                    fila = conn.execute("SELECT stock, estado FROM articulos WHERE articulo = ?",
+                                        (l["articulo"],)).fetchone()
+                    if fila is None or fila[1] != "Activo" or fila[0] < l["cantidad"]:
+                        raise StockInsuficiente(l["articulo"], fila[0] if fila else 0)
+                numero = conn.execute("SELECT COALESCE(MAX(factura), 0) + 1 FROM ventas").fetchone()[0]
+                for l in self.carrito:
+                    conn.execute(
+                        "INSERT INTO ventas (factura, cliente, codigo, articulo, precio, cantidad, total, iva, costo, "
+                        "fecha, hora, usuario, caja_id, metodo_pago, recibido, estado) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'EMITIDA')",
+                        (numero, cliente, l["codigo"], l["articulo"], l["precio"], l["cantidad"], l["total"],
+                         l["iva"], round(l["costo"] * l["cantidad"], 2), fecha, hora, usuario, caja_id, metodo,
+                         recibido))
+                    conn.execute("UPDATE articulos SET stock = stock - ? WHERE articulo = ?",
+                                 (l["cantidad"], l["articulo"]))
+        except CajaCerrada:
+            messagebox.showwarning("Caja cerrada", "El turno de caja se cerró. Abrí la caja para poder cobrar.\n"
+                                                   "La venta no se guardó.", parent=self)
+            self.actualizar_caja()
+            return None
+        except StockInsuficiente as e:
+            messagebox.showwarning("Stock insuficiente",
+                                   f"No hay suficiente «{e.articulo}» (disponible: {e.disponible}).\n"
+                                   "La venta no se guardó. Revise las cantidades.", parent=self)
+            self.cargar_productos()
+            return None
         except sqlite3.Error as e:
-            # Corrección (guía, video 7): rollback para que no quede media venta guardada.
-            conn.rollback()
-            if "CHECK" in str(e):
-                messagebox.showerror("Error", "No hay existencia suficiente para completar la venta. "
-                                              "No se guardó nada: revisá las cantidades del carrito.")
-            else:
-                messagebox.showerror("Error", f"Error al registrar la venta: {e}")
-            ventana_pago.destroy()
-            return
-        finally:
-            conn.close()
+            messagebox.showerror("Error", f"No se pudo registrar la venta: {e}", parent=self)
+            return None
 
-        # Corrección (guía, video 7, [1:04:14]): "Pago realizado" se muestra después del
-        # commit. En el video aparecía antes de guardar la venta.
-        messagebox.showinfo("Pago realizado", mensaje)
-
-        # El PDF se genera después de guardar: si falla, la venta igual queda registrada.
-        self.generar_factura_pdf(total_venta, cliente)
-
-        self.numero_factura += 1
-        self.label_numero_factura.config(text=str(self.numero_factura))
-
-        self.productos_seleccionados = []
-        self.limpiar_campos()
-
-        ventana_pago.destroy()
-
-    # ---------------- Ventas realizadas (video 8) ----------------
-    def ver_ventas_realizadas(self):
-        ventana_ventas = tk.Toplevel(self)
-        ventana_ventas.title("Ventas realizadas")
-        ventana_ventas.geometry("1100x650+120+20")
-        ventana_ventas.configure(bg=COLOR_FONDO)
-        ventana_ventas.resizable(False, False)
-        ventana_ventas.transient(self.master)
-        ventana_ventas.grab_set()
-        ventana_ventas.focus_set()
-        ventana_ventas.lift()
-
-        def filtrar_ventas():
-            # Reto de SQL (guía, video 8): en el video se traen todas las ventas con
-            # SELECT * y se filtran en Python. Aquí el filtro lo hace SQL.
-            factura_a_buscar = entry_factura.get().strip()
-            cliente_a_buscar = entry_cliente.get().strip()
-
-            # "WHERE 1 = 1" siempre es verdadero. Sirve para poder agregar cada filtro
-            # con "AND ..." sin preocuparse de cuál es el primero.
-            consulta = ("SELECT factura, cliente, articulo, precio, cantidad, total, fecha, hora "
-                        "FROM ventas WHERE 1 = 1")
-            parametros = []
-
-            if factura_a_buscar:
-                if not factura_a_buscar.isdigit():
-                    messagebox.showerror("Error", "El número de factura debe ser un número.", parent=ventana_ventas)
-                    return
-                consulta += " AND factura = ?"
-                parametros.append(int(factura_a_buscar))
-
-            if cliente_a_buscar:
-                consulta += " AND cliente LIKE ?"
-                parametros.append(f"%{cliente_a_buscar}%")
-
-            consulta += " ORDER BY factura"
-
-            for item in tree.get_children():
-                tree.delete(item)
-
-            try:
-                conn = sqlite3.connect(db_name)
-                c = conn.cursor()
-                c.execute(consulta, parametros)
-                ventas = c.fetchall()
-                conn.close()
-            except sqlite3.Error as e:
-                messagebox.showerror("Error", f"Error al obtener las ventas: {e}", parent=ventana_ventas)
-                return
-
-            for venta in ventas:
-                venta = list(venta)
-                venta[3] = "{:,.2f}".format(venta[3])
-                venta[5] = "{:,.2f}".format(venta[5])
-                venta[6] = datetime.datetime.strptime(venta[6], "%Y-%m-%d").strftime("%d-%m-%Y")
-                tree.insert("", "end", values=venta)
-
-        label_ventas_realizadas = tk.Label(ventana_ventas, text="Ventas realizadas", font="sans 26 bold",
-                                           bg=COLOR_FONDO)
-        label_ventas_realizadas.place(x=350, y=20)
-
-        filtro_frame = tk.Frame(ventana_ventas, bg=COLOR_FONDO)
-        filtro_frame.place(x=20, y=60, width=1060, height=60)
-
-        label_factura = tk.Label(filtro_frame, text="Número de factura", bg=COLOR_FONDO, font="sans 14 bold")
-        label_factura.place(x=10, y=15)
-        entry_factura = ttk.Entry(filtro_frame, font="sans 14 bold")
-        entry_factura.place(x=200, y=10, width=200, height=40)
-
-        label_cliente = tk.Label(filtro_frame, text="Cliente", bg=COLOR_FONDO, font="sans 14 bold")
-        label_cliente.place(x=420, y=15)
-        entry_cliente = ttk.Entry(filtro_frame, font="sans 14 bold")
-        entry_cliente.place(x=620, y=10, width=200, height=40)
-
-        btn_filtrar = tk.Button(filtro_frame, text="Filtrar", font="sans 14 bold", command=filtrar_ventas)
-        btn_filtrar.place(x=840, y=10)
-
-        tree_frame = tk.Frame(ventana_ventas, bg="white")
-        tree_frame.place(x=20, y=130, width=1060, height=500)
-
-        scrol_y = ttk.Scrollbar(tree_frame)
-        scrol_y.pack(side="right", fill="y")
-
-        scrol_x = ttk.Scrollbar(tree_frame, orient="horizontal")
-        scrol_x.pack(side="bottom", fill="x")
-
-        tree = ttk.Treeview(tree_frame,
-                            columns=("Factura", "Cliente", "Producto", "Precio", "Cantidad", "Total", "Fecha",
-                                     "Hora"),
-                            show="headings")
-        tree.pack(expand=True, fill="both")
-
-        scrol_y.config(command=tree.yview)
-        scrol_x.config(command=tree.xview)
-        tree.configure(yscrollcommand=scrol_y.set, xscrollcommand=scrol_x.set)
-
-        for columna in ("Factura", "Cliente", "Producto", "Precio", "Cantidad", "Total", "Fecha", "Hora"):
-            tree.heading(columna, text=columna)
-
-        tree.column("Factura", width=60, anchor="center")
-        tree.column("Cliente", width=120, anchor="center")
-        tree.column("Producto", width=120, anchor="center")
-        tree.column("Precio", width=80, anchor="center")
-        tree.column("Cantidad", width=80, anchor="center")
-        tree.column("Total", width=80, anchor="center")
-        tree.column("Fecha", width=80, anchor="center")
-        tree.column("Hora", width=80, anchor="center")
-
-        # Sin filtros, la consulta trae todas las ventas.
-        filtrar_ventas()
-
-    # ---------------- Factura en PDF (video 8) ----------------
-    def generar_factura_pdf(self, total_venta, cliente):
+        datos = {"numero": numero, "cliente": cliente, "fecha": fecha, "hora": hora, "usuario": usuario,
+                 "metodo": metodo, "recibido": recibido, "estado": "EMITIDA",
+                 "lineas": [dict(l) for l in self.carrito]}
+        # La factura se genera después de guardar: si el PDF falla, la venta igual queda registrada.
         try:
-            # Corrección (guía, video 8): la carpeta se crea desde el código.
-            os.makedirs("facturas", exist_ok=True)
-            factura_path = f"facturas/Factura_{self.numero_factura}.pdf"
-            c = canvas.Canvas(factura_path, pagesize=letter)
-
-            empresa_nombre = "Minimarket Versión 1.0"
-            empresa_direccion = "Calle 1, Managua, Nicaragua"
-            empresa_telefono = "+505 8888 8888"
-            empresa_email = "info@minimarket.com"
-            empresa_website = "www.minimarket.com"
-
-            c.setFont("Helvetica-Bold", 18)
-            c.setFillColor(colors.darkblue)
-            c.drawCentredString(300, 750, "FACTURA DE VENTA")
-
-            c.setFillColor(colors.black)
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(50, 710, f"{empresa_nombre}")
-            c.setFont("Helvetica", 12)
-            c.drawString(50, 690, f"Dirección: {empresa_direccion}")
-            c.drawString(50, 670, f"Teléfono: {empresa_telefono}")
-            c.drawString(50, 650, f"Email: {empresa_email}")
-            c.drawString(50, 630, f"Website: {empresa_website}")
-
-            c.setLineWidth(0.5)
-            c.setStrokeColor(colors.gray)
-            c.line(50, 620, 550, 620)
-
-            c.setFont("Helvetica", 12)
-            c.drawString(50, 600, f"Número de factura: {self.numero_factura}")
-            c.drawString(50, 580, f"Fecha: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-            c.line(50, 560, 550, 560)
-
-            c.drawString(50, 540, f"Cliente: {cliente}")
-            c.drawString(50, 520, "Descripción de productos:")
-
-            y_offset = 500
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(70, y_offset, "Producto")
-            c.drawString(270, y_offset, "Cantidad")
-            c.drawString(370, y_offset, "Precio")
-            c.drawString(470, y_offset, "Total")
-
-            c.line(50, y_offset - 10, 550, y_offset - 10)
-            y_offset -= 30
-            c.setFont("Helvetica", 12)
-
-            for item in self.productos_seleccionados:
-                factura, _, producto, precio, cantidad, total, costo = item
-                c.drawString(70, y_offset, producto)
-                c.drawString(270, y_offset, str(cantidad))
-                # Corrección (guía, video 8): C$ y dos decimales.
-                c.drawString(370, y_offset, "C$ {:,.2f}".format(precio))
-                c.drawString(470, y_offset, f"C$ {total}")
-                y_offset -= 20
-
-            c.line(50, y_offset, 550, y_offset)
-            y_offset -= 20
-
-            c.setFont("Helvetica-Bold", 14)
-            c.setFillColor(colors.darkblue)
-            c.drawString(50, y_offset, f"Total a pagar: C$ {total_venta:,.2f}")
-            c.setFillColor(colors.black)
-            c.setFont("Helvetica", 12)
-
-            y_offset -= 20
-            c.line(50, y_offset, 550, y_offset)
-
-            # Corrección (guía, video 8, [1:26:38]): sin comas de más dentro de drawString.
-            c.setFont("Helvetica-Bold", 16)
-            c.drawString(150, y_offset - 60, "¡Gracias por tu compra, vuelve pronto!")
-
-            y_offset -= 100
-            c.setFont("Helvetica", 10)
-            c.drawString(50, y_offset, "Términos y condiciones:")
-            c.drawString(50, y_offset - 20, "1. Los productos comprados no tienen devolución.")
-            c.drawString(50, y_offset - 40, "2. Conserve esta factura como comprobante de su compra.")
-            c.drawString(50, y_offset - 60, "3. Para más información, contacte a servicio al cliente.")
-
-            c.save()
-
-            messagebox.showinfo("Factura generada", f"Se ha generado la factura en: {factura_path}")
-            os.startfile(os.path.abspath(factura_path))
+            ruta = factura.generar_pdf(datos)
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo generar la factura: {e}")
+            print("No se pudo generar la factura:", e)
+            ruta = None
+        cambio = round(recibido - t["total"], 2) if metodo == "Efectivo" else 0.0
+
+        self.carrito.clear()
+        self.refrescar_carrito()
+        self.entry_cliente.set("Consumidor final")
+        self.actualizar_numero_factura()
+        self.cargar_productos()
+        return numero, t["total"], recibido, cambio, metodo, ruta
+
+    def ver_ventas_realizadas(self):
+        HistorialVentas(self)
+
+
+class VentanaCobro:
+    """Ventana de cobro: método de pago, monto recibido y cambio en vivo."""
+
+    BILLETES = [100, 200, 500, 1000]
+
+    def __init__(self, ventas, total):
+        self.ventas = ventas
+        self.total = total
+        self.metodo = "Efectivo"
+        top = self.top = ventana_modal(ventas, "Cobrar venta", 440, 520)
+
+        etiqueta(top, "Cobrar venta", F_TITULO, TEXTO).place(x=28, y=20)
+        etiqueta(top, "Total a pagar", F_NORMAL, TEXTO_SUAVE).place(x=28, y=72)
+        etiqueta(top, moneda(total), F_GRANDE, NAVY).place(x=28, y=94)
+
+        etiqueta(top, "Método de pago", F_NEGRITA, TEXTO).place(x=28, y=162)
+        self.btn_efectivo = boton(top, "Efectivo", lambda: self.elegir("Efectivo"), "primario")
+        self.btn_efectivo.place(x=28, y=188, width=188, height=38)
+        self.btn_tarjeta = boton(top, "Tarjeta", lambda: self.elegir("Tarjeta"), "secundario")
+        self.btn_tarjeta.place(x=224, y=188, width=188, height=38)
+
+        etiqueta(top, "Monto recibido", F_NEGRITA, TEXTO).place(x=28, y=242)
+        # Con una variable vigilada, el cambio se recalcula con cualquier modificación
+        # del campo: teclado, pegar con el mouse o los botones de billetes.
+        self.monto = tk.StringVar()
+        self.entry_monto = ttk.Entry(top, font=(FUENTE, 16), textvariable=self.monto)
+        self.entry_monto.place(x=28, y=268, width=384, height=44)
+        self.entry_monto.bind("<Return>", lambda e: self.confirmar())
+        self.monto.trace_add("write", lambda *args: self.actualizar_cambio())
+
+        self.rapidos = []
+        opciones = [("Exacto", total)] + [(f"C$ {b:,}", b) for b in self.BILLETES]
+        for i, (texto, valor) in enumerate(opciones):
+            b = boton(top, texto, lambda v=valor: self.poner_monto(v), "secundario", F_PEQUE)
+            b.place(x=28 + i * 78, y=322, width=72, height=34)
+            self.rapidos.append(b)
+
+        self.lbl_cambio = etiqueta(top, "", F_SUBTITULO, VERDE)
+        self.lbl_cambio.place(x=28, y=374)
+
+        boton(top, "Cancelar", top.destroy, "secundario").place(x=28, y=446, width=150, height=48)
+        self.btn_confirmar = boton(top, "Confirmar pago", self.confirmar, "exito", (FUENTE, 13, "bold"))
+        self.btn_confirmar.place(x=190, y=446, width=222, height=48)
+        top.bind("<Escape>", lambda e: top.destroy())
+        self.entry_monto.focus_set()
+        self.actualizar_cambio()
+
+    def elegir(self, metodo):
+        self.metodo = metodo
+        tarjeta = metodo == "Tarjeta"
+        cambiar_tipo(self.btn_efectivo, "secundario" if tarjeta else "primario")
+        cambiar_tipo(self.btn_tarjeta, "primario" if tarjeta else "secundario")
+        self.entry_monto.config(state="normal")
+        self.entry_monto.delete(0, "end")
+        if tarjeta:
+            self.entry_monto.insert(0, f"{self.total:.2f}")
+            self.entry_monto.config(state="disabled")
+        for b in self.rapidos:
+            b.config(state="disabled" if tarjeta else "normal")
+        if not tarjeta:
+            self.entry_monto.focus_set()
+        self.actualizar_cambio()
+
+    def poner_monto(self, valor):
+        self.entry_monto.delete(0, "end")
+        self.entry_monto.insert(0, f"{valor:.2f}")
+        self.actualizar_cambio()
+
+    def leer_monto(self):
+        texto = self.entry_monto.get().replace("C$", "").replace(",", "").strip()
+        try:
+            return float(texto)
+        except ValueError:
+            return None
+
+    def actualizar_cambio(self):
+        if self.metodo == "Tarjeta":
+            self.lbl_cambio.config(text=f"Se cobrarán {moneda(self.total)} con tarjeta", fg=NAVY)
+            return
+        monto = self.leer_monto()
+        if monto is None:
+            self.lbl_cambio.config(text="")
+        elif monto >= self.total - 0.004:
+            self.lbl_cambio.config(text=f"Cambio: {moneda(monto - self.total)}", fg=VERDE)
+        else:
+            self.lbl_cambio.config(text=f"Falta: {moneda(self.total - monto)}", fg=ROJO)
+
+    def confirmar(self):
+        if self.metodo == "Tarjeta":
+            recibido = self.total
+        else:
+            monto = self.leer_monto()
+            if monto is None:
+                self.lbl_cambio.config(text="Escriba el monto recibido.", fg=ROJO)
+                return
+            if monto < self.total - 0.004:
+                self.lbl_cambio.config(text=f"El monto no alcanza. Falta: {moneda(self.total - monto)}", fg=ROJO)
+                return
+            recibido = round(monto, 2)
+        resultado = self.ventas.procesar_pago(recibido, self.metodo)
+        self.top.destroy()
+        if resultado:
+            VentanaVentaExitosa(self.ventas, *resultado)
+
+
+class VentanaVentaExitosa:
+    def __init__(self, ventas, numero, total, recibido, cambio, metodo, ruta):
+        self.ruta = ruta
+        top = self.top = ventana_modal(ventas, "Venta registrada", 420, 330)
+        icono = tk.Canvas(top, width=64, height=64, bg=BLANCO, highlightthickness=0)
+        icono.place(x=178, y=22)
+        icono.create_oval(2, 2, 62, 62, fill=VERDE_FONDO, outline="")
+        icono.create_line(18, 34, 28, 44, 46, 22, fill=VERDE, width=5, capstyle="round", joinstyle="round")
+
+        etiqueta(top, "Venta registrada", F_TITULO, TEXTO).place(relx=0.5, y=96, anchor="n")
+        etiqueta(top, f"Factura N° {numero:06d}  ·  Total {moneda(total)}", F_NORMAL, TEXTO_SUAVE).place(
+            relx=0.5, y=138, anchor="n")
+        if metodo == "Efectivo":
+            etiqueta(top, f"Cambio: {moneda(cambio)}", (FUENTE, 20, "bold"), VERDE).place(relx=0.5, y=172, anchor="n")
+        else:
+            etiqueta(top, "Pagado con tarjeta", F_SUBTITULO, NAVY).place(relx=0.5, y=178, anchor="n")
+
+        self.btn_factura = boton(top, "Ver factura (PDF)", self.abrir_factura, "primario")
+        self.btn_factura.place(x=28, y=252, width=176, height=46)
+        self.btn_nueva = boton(top, "Nueva venta", top.destroy, "secundario")
+        self.btn_nueva.place(x=216, y=252, width=176, height=46)
+        if not ruta:
+            self.btn_factura.config(state="disabled")
+            etiqueta(top, "No se pudo generar el PDF de la factura.", F_PEQUE, ROJO).place(relx=0.5, y=222, anchor="n")
+        top.bind("<Return>", lambda e: top.destroy())
+        top.bind("<Escape>", lambda e: top.destroy())
+
+    def abrir_factura(self):
+        if self.ruta:
+            factura.abrir(self.ruta)
+        self.top.destroy()
+
+
+class HistorialVentas:
+    """Ventas realizadas: filtros, reimpresión y anulación de facturas."""
+
+    PERIODOS = ["Todas", "Hoy", "Últimos 7 días", "Este mes"]
+    ESTADOS = ["Todos", "Emitidas", "Anuladas"]
+
+    def __init__(self, ventas):
+        self.ventas = ventas
+        top = self.top = ventana_modal(ventas, "Ventas realizadas", 1040, 600, bg=FONDO)
+        etiqueta(top, "Ventas realizadas", F_TITULO, TEXTO, bg=FONDO).place(x=24, y=16)
+
+        p = panel(top)
+        p.place(x=24, y=64, width=992, height=74)
+        etiqueta(p, "Factura", F_PEQUE, TEXTO_SUAVE).place(x=16, y=6)
+        self.entry_factura = campo(p)
+        self.entry_factura.place(x=16, y=28, width=110, height=34)
+        etiqueta(p, "Cliente", F_PEQUE, TEXTO_SUAVE).place(x=140, y=6)
+        self.entry_cliente = campo(p)
+        self.entry_cliente.place(x=140, y=28, width=220, height=34)
+        etiqueta(p, "Período", F_PEQUE, TEXTO_SUAVE).place(x=374, y=6)
+        self.combo_periodo = lista(p, values=self.PERIODOS, state="readonly")
+        self.combo_periodo.set("Todas")
+        self.combo_periodo.place(x=374, y=28, width=170, height=34)
+        etiqueta(p, "Estado", F_PEQUE, TEXTO_SUAVE).place(x=558, y=6)
+        self.combo_estado = lista(p, values=self.ESTADOS, state="readonly")
+        self.combo_estado.set("Todos")
+        self.combo_estado.place(x=558, y=28, width=140, height=34)
+        boton(p, "Buscar", self.buscar).place(x=712, y=28, width=120, height=34)
+        boton(p, "Limpiar", self.limpiar, "secundario").place(x=842, y=28, width=130, height=34)
+        for w in (self.entry_factura, self.entry_cliente):
+            w.bind("<Return>", lambda e: self.buscar())
+        for w in (self.combo_periodo, self.combo_estado):
+            w.bind("<<ComboboxSelected>>", lambda e: self.buscar())
+
+        columnas = [("factura", "Factura", 80, "center"), ("fecha", "Fecha", 100, "center"),
+                    ("hora", "Hora", 70, "center"), ("cliente", "Cliente", 200, "w"),
+                    ("articulos", "Artículos", 80, "center"), ("total", "Total", 120, "e"),
+                    ("pago", "Pago", 90, "center"), ("cajero", "Cajero", 100, "center"),
+                    ("estado", "Estado", 110, "center")]
+        marco, self.tree = tabla(top, columnas)
+        marco.place(x=24, y=150, width=992, height=356)
+        self.tree.bind("<Double-1>", lambda e: self.ver_factura())
+
+        self.lbl_resumen = etiqueta(top, "", F_NEGRITA, TEXTO, bg=FONDO)
+        self.lbl_resumen.place(x=24, y=528)
+        boton(top, "Ver factura", self.ver_factura).place(x=592, y=520, width=130, height=42)
+        self.btn_anular = boton(top, "Anular factura", self.anular, "peligro")
+        self.btn_anular.place(x=732, y=520, width=150, height=42)
+        if not ventas.controlador.puede("anular"):
+            # Anular devuelve mercadería y plata: queda para el administrador.
+            self.btn_anular.config(state="disabled")
+            etiqueta(top, "Anular facturas requiere un administrador.", F_PEQUE, TEXTO_SUAVE, bg=FONDO).place(
+                x=592, y=568)
+        boton(top, "Cerrar", top.destroy, "secundario").place(x=892, y=520, width=124, height=42)
+        top.bind("<Escape>", lambda e: top.destroy())
+        self.buscar()
+
+    def limpiar(self):
+        self.entry_factura.delete(0, "end")
+        self.entry_cliente.delete(0, "end")
+        self.combo_periodo.set("Todas")
+        self.combo_estado.set("Todos")
+        self.buscar()
+
+    def buscar(self):
+        # "WHERE 1 = 1" permite agregar cada filtro con "AND ..." sin importar cuál va primero.
+        condiciones, parametros = ["1 = 1"], []
+        numero = self.entry_factura.get().strip()
+        if numero:
+            if not numero.isdigit():
+                messagebox.showwarning("Ventas realizadas", "El número de factura debe ser un número.", parent=self.top)
+                return
+            condiciones.append("factura = ?")
+            parametros.append(int(numero))
+        cliente = self.entry_cliente.get().strip()
+        if cliente:
+            condiciones.append("cliente LIKE ?")
+            parametros.append(f"%{cliente}%")
+        hoy = datetime.date.today()
+        desde = {"Hoy": hoy, "Últimos 7 días": hoy - datetime.timedelta(days=6),
+                 "Este mes": hoy.replace(day=1)}.get(self.combo_periodo.get())
+        if desde:
+            condiciones.append("fecha >= ?")
+            parametros.append(desde.isoformat())
+        estado = {"Emitidas": "EMITIDA", "Anuladas": "ANULADA"}.get(self.combo_estado.get())
+        if estado:
+            condiciones.append("estado = ?")
+            parametros.append(estado)
+
+        filas = db.consultar(
+            "SELECT factura, fecha, hora, cliente, SUM(cantidad), SUM(total), metodo_pago, usuario, estado "
+            f"FROM ventas WHERE {' AND '.join(condiciones)} GROUP BY factura ORDER BY factura DESC", parametros)
+        vista = [(f"{f[0]:06d}", fecha_corta(f[1]), f[2][:5], f[3], f[4], moneda(f[5]), f[6], f[7] or "—",
+                  "Anulada" if f[8] == "ANULADA" else "Emitida") for f in filas]
+        llenar_tabla(self.tree, vista, lambda fila: ["anulada"] if fila[8] == "Anulada" else [])
+
+        emitidas = [f for f in filas if f[8] == "EMITIDA"]
+        anuladas = len(filas) - len(emitidas)
+        texto = f"{len(filas)} factura{'s' if len(filas) != 1 else ''}  ·  Vendido: {moneda(sum(f[5] for f in emitidas))}"
+        if anuladas:
+            texto += f"  ·  {anuladas} anulada{'s' if anuladas != 1 else ''}"
+        self.lbl_resumen.config(text=texto)
+
+    def _seleccion(self):
+        seleccion = self.tree.selection()
+        if not seleccion:
+            messagebox.showwarning("Ventas realizadas", "Seleccione una factura de la lista.", parent=self.top)
+            return None, None
+        valores = self.tree.item(seleccion[0], "values")
+        return int(str(valores[0])), valores[8]
+
+    def ver_factura(self):
+        numero, _ = self._seleccion()
+        if numero is None:
+            return
+        try:
+            ruta = factura.generar_pdf(factura.datos_desde_bd(numero))
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo generar la factura: {e}", parent=self.top)
+            return
+        factura.abrir(ruta)
+
+    def anular(self):
+        if not self.ventas.controlador.puede("anular"):
+            messagebox.showwarning("Ventas realizadas", "Solo un administrador puede anular facturas.",
+                                   parent=self.top)
+            return
+        numero, estado = self._seleccion()
+        if numero is None:
+            return
+        if estado == "Anulada":
+            messagebox.showinfo("Ventas realizadas", "Esa factura ya está anulada.", parent=self.top)
+            return
+        if not messagebox.askyesno("Anular factura",
+                                   f"¿Anular la factura N° {numero:06d}?\n\nLos productos vuelven al inventario. "
+                                   "La factura no se borra: queda registrada como anulada.", parent=self.top):
+            return
+        try:
+            with db.conectar() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                lineas = conn.execute("SELECT codigo, articulo, cantidad FROM ventas "
+                                      "WHERE factura = ? AND estado = 'EMITIDA'", (numero,)).fetchall()
+                conn.execute("UPDATE ventas SET estado = 'ANULADA' WHERE factura = ?", (numero,))
+                for codigo, articulo, cantidad in lineas:
+                    # Se busca por código y, si el producto no tiene, por nombre.
+                    conn.execute("UPDATE articulos SET stock = stock + ? "
+                                 "WHERE (codigo = ? AND codigo <> '') OR articulo = ?", (cantidad, codigo or "", articulo))
+        except sqlite3.Error as e:
+            messagebox.showerror("Error", f"No se pudo anular la factura: {e}", parent=self.top)
+            return
+        messagebox.showinfo("Factura anulada", f"La factura N° {numero:06d} quedó anulada y el stock se devolvió al "
+                                               "inventario.", parent=self.top)
+        self.buscar()
+        self.ventas.cargar_productos()

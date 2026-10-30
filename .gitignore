@@ -1,3 +1,6 @@
 __pycache__/
 facturas/
+reportes/
+respaldos/
 database.db
+database_v1_respaldo*.db
