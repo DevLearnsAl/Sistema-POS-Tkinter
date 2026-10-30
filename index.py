@@ -5,9 +5,15 @@ import os
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 import crear_bd
+import registro
 from manager import Manager
 
 if __name__ == "__main__":
-    aviso = crear_bd.preparar_base()
+    registro.iniciar()
+    try:
+        aviso = crear_bd.preparar_base()
+    except Exception as e:
+        registro.error("No se pudo preparar la base de datos", e)
+        raise
     app = Manager(aviso_inicial=aviso)
     app.mainloop()

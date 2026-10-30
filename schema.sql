@@ -1,6 +1,15 @@
--- Minimarket v3: esquema de la base de datos (SQLite).
+-- Minimarket v4: esquema de la base de datos (SQLite).
 -- Las reglas de negocio viven en el propio esquema (UNIQUE, CHECK), así la base
 -- rechaza datos inválidos aunque el programa tuviera un error.
+
+-- Configuración del negocio: lo que cambia de un cliente a otro (nombre, RUC,
+-- logo, moneda, impuesto). Está en la base y no en el código, así el mismo
+-- programa se instala en cualquier negocio. Los valores por defecto y la
+-- lectura están en ajustes.py.
+CREATE TABLE IF NOT EXISTS configuracion (
+    clave  TEXT PRIMARY KEY,
+    valor  TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS usuarios (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,7 +28,7 @@ CREATE TABLE IF NOT EXISTS articulos (
     costo         REAL NOT NULL CHECK (costo >= 0),
     stock         INTEGER NOT NULL CHECK (stock >= 0),    -- una venta nunca lo deja negativo
     stock_minimo  INTEGER NOT NULL DEFAULT 5 CHECK (stock_minimo >= 0),
-    iva           REAL NOT NULL DEFAULT 15 CHECK (iva IN (0, 15)),  -- 0 = exento
+    iva           REAL NOT NULL DEFAULT 15 CHECK (iva >= 0 AND iva < 100),  -- 0 = exento
     estado        TEXT NOT NULL CHECK (estado IN ('Activo', 'Inactivo')),
     image_path    TEXT
 );
@@ -114,4 +123,4 @@ CREATE TABLE IF NOT EXISTS compras (
     usuario    TEXT
 );
 
-PRAGMA user_version = 3;
+PRAGMA user_version = 4;

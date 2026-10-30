@@ -1,6 +1,9 @@
 import tkinter as tk
+from tkinter import messagebox
 
+import ajustes
 import config
+import registro
 from estilos import FONDO, configurar_estilos
 from login import Login, Registro
 from container import Container
@@ -13,7 +16,11 @@ class Manager(tk.Tk):
 
     def __init__(self, aviso_inicial=None):
         super().__init__()
-        self.title(f"{config.NEGOCIO['nombre']} · Sistema de facturación e inventario v{config.VERSION}")
+        # La configuración del negocio se lee una vez, antes de armar las pantallas:
+        # varias toman de ahí sus textos (nombre, moneda, nombre del impuesto).
+        ajustes.cargar()
+        self.title(f"{ajustes.obtener('negocio_nombre')} · Sistema de facturación e inventario "
+                   f"v{config.VERSION}")
         x = max((self.winfo_screenwidth() - self.ANCHO) // 2, 0)
         y = max((self.winfo_screenheight() - self.ALTO) // 2 - 30, 0)
         self.geometry(f"{self.ANCHO}x{self.ALTO}+{x}+{y}")
@@ -38,6 +45,22 @@ class Manager(tk.Tk):
         self.show_frame(Login)
         if aviso_inicial:
             self.frames[Login].mostrar_mensaje(aviso_inicial, error=False)
+
+    def report_callback_exception(self, tipo, valor, rastro):
+        """Cualquier error que no se haya atrapado antes cae acá.
+
+        Tkinter, por su cuenta, lo escribiría en una consola que el usuario no ve.
+        Así queda en el archivo de registro y la persona recibe un aviso claro en
+        vez de una ventana que no responde."""
+        registro.error("Error no controlado en la interfaz", valor)
+        messagebox.showerror("Error inesperado",
+                             f"Ocurrió un error inesperado:\n\n{valor}\n\n"
+                             f"Quedó anotado en {registro.ARCHIVO}. Si se repite, pasale ese archivo "
+                             "a quien da el soporte.", parent=self)
+
+    def actualizar_titulo(self):
+        self.title(f"{ajustes.obtener('negocio_nombre')} · Sistema de facturación e inventario "
+                   f"v{config.VERSION}")
 
     def show_frame(self, clase):
         frame = self.frames[clase]

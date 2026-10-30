@@ -18,7 +18,7 @@ from db import DB_NAME
 from seguridad import hash_password
 from utilidades import calcular_linea, codigo_interno
 
-VERSION_ESQUEMA = 3
+VERSION_ESQUEMA = 4
 
 # (nombre, precio, costo, stock, stock mínimo, IVA %, estado, foto)
 # Precios al público en córdobas, IVA incluido. Los productos de la canasta
@@ -177,31 +177,65 @@ def _columnas(conn, tabla):
     return {f[1] for f in conn.execute(f"PRAGMA table_info({tabla})")}
 
 
-def migrar_v2_a_v3():
-    """Agrega roles, cajas y las columnas nuevas sin tocar los datos existentes.
+def _migrar_a_v3(conn):
+    """Roles de usuario, cajas y las columnas nuevas, sin tocar los datos.
 
     SQLite permite ALTER TABLE ADD COLUMN con DEFAULT y CHECK, así que las filas
     que ya existen toman el valor por defecto."""
+    agregar = [
+        ("usuarios", "rol", "TEXT NOT NULL DEFAULT 'cajero' CHECK (rol IN ('admin', 'cajero'))"),
+        ("usuarios", "activo", "INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1))"),
+        ("clientes", "activo", "INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1))"),
+        ("proveedores", "activo", "INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1))"),
+        ("ventas", "caja_id", "INTEGER REFERENCES cajas (id)"),
+    ]
+    for tabla, columna, definicion in agregar:
+        if columna not in _columnas(conn, tabla):
+            conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}")
+    # El usuario admin de la versión 2 pasa a ser administrador; los demás, cajeros.
+    conn.execute("UPDATE usuarios SET rol = 'admin' WHERE username = 'admin'")
+
+
+def _migrar_a_v4(conn):
+    """Tasa de impuesto configurable.
+
+    Hasta la v3 el esquema exigía `CHECK (iva IN (0, 15))`, que ataba el programa
+    al IVA de Nicaragua. SQLite no sabe modificar un CHECK, así que la tabla se
+    reconstruye: se crea la nueva, se copian las filas, se borra la vieja y se
+    renombra. (La tabla `configuracion` la crea schema.sql.)"""
+    definicion = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'articulos'").fetchone()
+    if not definicion or "IN (0, 15)" not in definicion[0]:
+        return
+    conn.execute("""
+        CREATE TABLE articulos_nuevo (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo        TEXT UNIQUE,
+            articulo      TEXT NOT NULL UNIQUE,
+            precio        REAL NOT NULL CHECK (precio > 0),
+            costo         REAL NOT NULL CHECK (costo >= 0),
+            stock         INTEGER NOT NULL CHECK (stock >= 0),
+            stock_minimo  INTEGER NOT NULL DEFAULT 5 CHECK (stock_minimo >= 0),
+            iva           REAL NOT NULL DEFAULT 15 CHECK (iva >= 0 AND iva < 100),
+            estado        TEXT NOT NULL CHECK (estado IN ('Activo', 'Inactivo')),
+            image_path    TEXT
+        )""")
+    conn.execute("INSERT INTO articulos_nuevo SELECT id, codigo, articulo, precio, costo, stock, stock_minimo, "
+                 "iva, estado, image_path FROM articulos")
+    conn.execute("DROP TABLE articulos")
+    conn.execute("ALTER TABLE articulos_nuevo RENAME TO articulos")
+
+
+def migrar(desde):
+    """Lleva la base de su versión a la actual, paso por paso."""
+    pasos = {3: _migrar_a_v3, 4: _migrar_a_v4}
     conn = sqlite3.connect(DB_NAME)
     try:
-        agregar = [
-            ("usuarios", "rol", "TEXT NOT NULL DEFAULT 'cajero' CHECK (rol IN ('admin', 'cajero'))"),
-            ("usuarios", "activo", "INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1))"),
-            ("clientes", "activo", "INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1))"),
-            ("proveedores", "activo", "INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1))"),
-            ("ventas", "caja_id", "INTEGER REFERENCES cajas (id)"),
-        ]
-        for tabla, columna, definicion in agregar:
-            if columna not in _columnas(conn, tabla):
-                conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}")
-
+        for version in range(desde + 1, VERSION_ESQUEMA + 1):
+            pasos[version](conn)
         # Las tablas e índices nuevos se crean con el mismo schema.sql: todo lo
         # que ya existe lleva IF NOT EXISTS, así que no se toca.
         with open("schema.sql", encoding="utf-8") as archivo:
             conn.executescript(archivo.read())
-
-        # El usuario admin de la versión 2 pasa a ser administrador; los demás, cajeros.
-        conn.execute("UPDATE usuarios SET rol = 'admin' WHERE username = 'admin'")
         conn.commit()
     finally:
         conn.close()
@@ -248,8 +282,9 @@ def preparar_base():
         else:
             hacer_respaldo()
             if version < VERSION_ESQUEMA:
-                migrar_v2_a_v3()
-                mensaje = "La base de datos se actualizó a la versión 3 (roles y arqueo de caja)."
+                migrar(version)
+                mensaje = (f"La base de datos se actualizó de la versión {version} a la "
+                           f"{VERSION_ESQUEMA}. Se guardó una copia en {config.CARPETA_RESPALDOS}/.")
     if not os.path.exists(DB_NAME):
         crear_base_de_datos()
     return mensaje

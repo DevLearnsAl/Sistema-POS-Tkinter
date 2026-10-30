@@ -6,6 +6,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
+import ajustes
 import db
 from estilos import (FONDO, BLANCO, NAVY, TEXTO, TEXTO_SUAVE, VERDE, FUENTE, F_PEQUE, F_SUBTITULO, moneda, boton,
                      cambiar_tipo, panel, etiqueta, tabla, llenar_tabla)
@@ -102,11 +103,12 @@ class Reportes(tk.Frame):
         neto = ventas - iva
         ganancia = neto - costo
         margen = ganancia / neto * 100 if neto else 0
-        self._kpi("ventas", moneda(ventas), f"IVA incluido: {moneda(iva)}")
+        impuesto = ajustes.nombre_impuesto()
+        self._kpi("ventas", moneda(ventas), f"{impuesto} incluido: {moneda(iva)}")
         self._kpi("facturas", str(facturas),
                   f"{anuladas} anulada{'s' if anuladas != 1 else ''}" if anuladas else "Sin anulaciones")
         self._kpi("ticket", moneda(ventas / facturas if facturas else 0), f"{articulos} artículos vendidos")
-        self._kpi("ganancia", moneda(ganancia), f"Margen {margen:.1f} % (sin IVA)")
+        self._kpi("ganancia", moneda(ganancia), f"Margen {margen:.1f} % (sin {impuesto})")
 
         filas = db.consultar("SELECT articulo, SUM(cantidad), SUM(total) FROM ventas WHERE estado = 'EMITIDA' "
                              "AND fecha >= ? GROUP BY articulo ORDER BY SUM(cantidad) DESC, SUM(total) DESC LIMIT 5",
@@ -147,7 +149,8 @@ class Reportes(tk.Frame):
             y = abajo - (abajo - arriba) * k / 4
             c.create_line(izquierda, y, derecha, y, fill="#E6EAF0")
             c.create_text(izquierda - 10, y, text=f"{paso * k:,.0f}", anchor="e", fill=TEXTO_SUAVE, font=(FUENTE, 9))
-        c.create_text(izquierda - 10, arriba - 12, text="C$", anchor="e", fill=TEXTO_SUAVE, font=(FUENTE, 9, "bold"))
+        c.create_text(izquierda - 10, arriba - 12, text=ajustes.simbolo(), anchor="e", fill=TEXTO_SUAVE,
+                      font=(FUENTE, 9, "bold"))
         hueco = (derecha - izquierda) / len(datos)
         ancho_barra = min(48, hueco * 0.6)
         hoy = datetime.date.today()
@@ -182,7 +185,7 @@ class Reportes(tk.Frame):
         with open(ruta, "w", newline="", encoding="utf-8-sig") as archivo:
             w = csv.writer(archivo)
             w.writerow(["Factura", "Fecha", "Hora", "Cliente", "Código", "Producto", "Cantidad", "Precio", "Total",
-                        "IVA", "Costo", "Pago", "Cajero", "Estado"])
+                        ajustes.nombre_impuesto(), "Costo", "Pago", "Cajero", "Estado"])
             w.writerows(filas)
         if messagebox.askyesno("Reporte exportado", f"Se exportaron {len(filas)} líneas de venta a:\n{ruta}\n\n"
                                                     "¿Abrir la carpeta?", parent=self):

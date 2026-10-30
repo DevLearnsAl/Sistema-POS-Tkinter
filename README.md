@@ -1,9 +1,12 @@
 # Minimarket: sistema de facturación e inventario en Python
 
-Sistema de punto de venta (POS) para un minimarket, hecho con Python, Tkinter y SQLite.
-Registra ventas con código de barras e IVA, genera facturas en PDF, controla el inventario
-y las compras a proveedores, maneja el turno de caja con su arqueo y muestra reportes de
-ventas y ganancias. Tiene dos roles de usuario. Los precios están en córdobas (C$).
+Sistema de punto de venta (POS) hecho con Python, Tkinter y SQLite. Registra ventas con
+código de barras e impuesto, genera facturas en PDF, controla el inventario y las compras a
+proveedores, maneja el turno de caja con su arqueo y muestra reportes de ventas y ganancias.
+Tiene dos roles de usuario.
+
+**Se instala en cualquier negocio sin tocar el código**: el nombre, el logo, la moneda, el
+impuesto y los textos de la factura se configuran desde el propio programa.
 
 | | |
 |---|---|
@@ -36,6 +39,9 @@ ventas y ganancias. Tiene dos roles de usuario. Los precios están en córdobas 
   ventas por día; productos más vendidos; stock bajo; exportación a CSV.
 - **Usuarios.** El administrador crea cuentas, cambia roles, desactiva usuarios y
   restablece contraseñas. Cualquiera puede cambiar la suya desde «Mi cuenta».
+- **Configuración.** Nombre y datos del negocio, logo, símbolo y decimales de la moneda,
+  denominaciones del cobro rápido, nombre y tasa del impuesto, textos de la factura y código
+  de registro. Todo se guarda en la base de datos, no en el código.
 
 ### Qué puede hacer cada rol
 
@@ -50,6 +56,7 @@ ventas y ganancias. Tiene dos roles de usuario. Los precios están en córdobas 
 | Compras y proveedores | | ✓ |
 | Reportes (ve costos y ganancias) | | ✓ |
 | Usuarios y arqueos de todos | | ✓ |
+| Configuración del negocio | | ✓ |
 
 ## Tecnologías
 
@@ -69,11 +76,14 @@ py index.py
 Datos de acceso:
 
 - Usuario: `admin` · Contraseña: `admin` (el sistema avisa mientras siga siendo esa)
-- Código para registrar usuarios nuevos: `1234` (se cambia en `config.py`)
+- Código para registrar usuarios nuevos: `1234` (se cambia en Configuración)
 
 La primera vez, el programa crea `database.db` con datos de ejemplo: 11 productos, 4
 clientes, 3 proveedores, una semana de ventas y sus 7 arqueos de caja. **Para vender hay
 que abrir la caja primero**, en el módulo Caja. Para empezar de cero, borrá `database.db`.
+
+Para adaptarlo a un negocio, entrá con el administrador y abrí **Configuración** desde el
+menú de usuario, arriba a la derecha.
 
 Atajos: **F1** a **F7** cambian de módulo, **Enter** agrega el producto, **F12** cobra y
 **Supr** quita la línea seleccionada.
@@ -85,10 +95,10 @@ py tests/prueba_completa.py
 ```
 
 Maneja la interfaz como un usuario sobre una copia temporal del proyecto (no toca tu
-base de datos) y comprueba 137 casos: migraciones, login y roles, permisos del cajero,
-apertura y cierre de caja con su arqueo, ventas con código de barras e IVA, cobro en
+base de datos) y comprueba 165 casos: migraciones, login y roles, permisos del cajero,
+apertura y cierre de caja con su arqueo, ventas con código de barras e impuesto, cobro en
 efectivo y tarjeta, stock insuficiente, anulación, inventario, compras, clientes,
-proveedores, usuarios y reportes.
+proveedores, usuarios, reportes, configuración del negocio y registro de errores.
 
 ## Cómo funciona
 
@@ -128,29 +138,48 @@ Las facturas anuladas no suman, porque ese dinero se devolvió.
 | `catalogo.py` | Clientes y Proveedores (misma pantalla, distinta configuración) |
 | `reportes.py` | Indicadores, gráfico, más vendidos, stock bajo y CSV |
 | `usuarios.py` | Mi cuenta y administración de usuarios |
+| `configuracion.py` | Pantalla de configuración del negocio |
+| `ajustes.py` | Lee y guarda esa configuración; moneda e impuesto |
 | `estilos.py` | Colores, fuentes y widgets comunes |
 | `db.py` | Conexión a la base: cierra siempre y deshace si hay error |
 | `seguridad.py` | Hash de contraseñas |
-| `config.py` | Datos del negocio, código de registro y permisos de cada rol |
+| `registro.py` | Registro de errores en `logs/minimarket.log` |
+| `config.py` | Versión, carpetas y permisos de cada rol |
 | `schema.sql`, `crear_bd.py` | Esquema, datos de ejemplo, respaldos y migración |
 | `utilidades.py` | Cálculo de IVA, códigos EAN-13 y búsqueda de productos |
 | `tests/` | Prueba completa del sistema |
 | `fotos/`, `imagenes/` | Fotos de productos e ícono de la aplicación |
 
+### Un solo programa para varios negocios
+
+Lo que cambia de un cliente a otro no está en el código sino en la tabla `configuracion`,
+y se edita desde la pantalla de Configuración. Así no hace falta una copia del programa por
+cliente: es el mismo, con otra configuración.
+
+| | |
+|---|---|
+| <img src="docs/capturas/configuracion.png" alt="Pantalla de configuración" width="420"> | <img src="docs/capturas/ventas_personalizado.png" alt="El mismo sistema con otra identidad" width="420"> |
+
+A la derecha, el mismo programa de las capturas de arriba configurado como otro negocio:
+otro nombre, otra moneda y otro impuesto (ITBMS 7 % en lugar de IVA 15 %).
+
 ### Base de datos
 
-Ocho tablas en SQLite: `usuarios`, `articulos`, `ventas`, `clientes`, `proveedores`,
-`compras`, `cajas` y `movimientos_caja`. Las reglas de negocio están en el propio esquema:
-nombres y códigos de barras únicos, cédula y RUC únicos, precio mayor que cero, IVA 0 o 15,
-stock que nunca puede quedar negativo, y un índice único parcial que impide **dos turnos de
-caja abiertos a la vez**.
+Nueve tablas en SQLite: `usuarios`, `articulos`, `ventas`, `clientes`, `proveedores`,
+`compras`, `cajas`, `movimientos_caja` y `configuracion`. Las reglas de negocio están en el
+propio esquema: nombres y códigos de barras únicos, cédula y RUC únicos, precio mayor que
+cero, tasa de impuesto entre 0 y 99,99, stock que nunca puede quedar negativo, y un índice
+único parcial que impide **dos turnos de caja abiertos a la vez**.
 
 ### Respaldos y actualización
 
 Cada vez que arranca, el programa guarda una copia de la base en `respaldos/` con la API
-`backup()` de SQLite y conserva las últimas 10. Si encuentra una base de la versión 2, le
-agrega lo nuevo sin perder los datos; si es de la versión 1, la guarda como
-`database_v1_respaldo.db` y crea una nueva.
+`backup()` de SQLite y conserva las últimas 10. Las bases de versiones anteriores se
+actualizan paso por paso sin perder los datos; las de la versión 1, que no es compatible, se
+guardan como `database_v1_respaldo.db` y se crea una nueva.
+
+Los errores que no se pueden resolver solos quedan anotados en `logs/minimarket.log`, con la
+fecha y el detalle completo, para poder dar soporte sin adivinar.
 
 ## Diseño en Figma
 
@@ -160,11 +189,12 @@ pantallas en SVG).
 
 ## Próximas mejoras
 
-- Guardar el dinero en centavos enteros en lugar de números decimales (`REAL`).
-- Separar las ventas en `ventas` y `detalle_venta`, con claves foráneas por id.
+- Instalador `.exe` para no depender de que Python esté instalado.
 - Devoluciones parciales: hoy solo se puede anular la factura completa.
 - Venta al crédito con saldo por cliente y abonos.
 - Descuentos por línea y sobre el total.
+- Guardar el dinero en centavos enteros en lugar de números decimales (`REAL`).
+- Separar las ventas en `ventas` y `detalle_venta`, con claves foráneas por id.
 - Impresión en ticketera térmica de 80 mm.
 
 ## Créditos

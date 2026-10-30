@@ -1,6 +1,10 @@
+import os
 import sqlite3
 import tkinter as tk
 
+from PIL import Image, ImageOps, ImageTk
+
+import ajustes
 import config
 import db
 from seguridad import hash_password, verificar_password
@@ -23,18 +27,37 @@ class PantallaAcceso(tk.Frame):
         super().__init__(padre, bg=BLANCO)
         self.controlador = controlador
         self.place(x=0, y=0, width=1100, height=650)
-        self.panel_marca()
+        self.marca = tk.Canvas(self, bg=NAVY, highlightthickness=0)
+        self.marca.place(x=0, y=0, width=440, height=650)
+        self.dibujar_marca()
         self.widgets()
 
-    def panel_marca(self):
-        marca = tk.Canvas(self, bg=NAVY, highlightthickness=0)
-        marca.place(x=0, y=0, width=440, height=650)
+    def dibujar_marca(self):
+        """Panel de la izquierda. Se vuelve a dibujar al mostrarse, así el nombre
+        y el logo cambian apenas se guarda la configuración."""
+        marca = self.marca
+        marca.delete("all")
         # Franjas diagonales suaves de fondo
         for x in range(-650, 440, 70):
             marca.create_line(x, 650, x + 650, 0, fill="#224682", width=18)
-        dibujar_logo(marca, 220, 200, 78)
-        marca.create_text(220, 320, text=config.NEGOCIO["nombre"], fill=BLANCO, font=(FUENTE, 28, "bold"))
-        marca.create_text(220, 360, text="Sistema de facturación e inventario", fill=TEXTO_CLARO, font=(FUENTE, 12))
+
+        ruta = ajustes.obtener("negocio_logo")
+        self._logo = None
+        if ruta and os.path.exists(ruta):
+            try:
+                imagen = ImageOps.contain(Image.open(ruta).convert("RGBA"), (200, 170))
+                fondo = Image.new("RGBA", imagen.size, NAVY)
+                self._logo = ImageTk.PhotoImage(Image.alpha_composite(fondo, imagen))
+                marca.create_image(220, 200, image=self._logo)
+            except OSError:
+                self._logo = None
+        if self._logo is None:
+            dibujar_logo(marca, 220, 200, 78)
+
+        nombre = ajustes.obtener("negocio_nombre")
+        marca.create_text(220, 320, text=nombre, fill=BLANCO, width=400,
+                          font=(FUENTE, 28 if len(nombre) <= 16 else 20, "bold"))
+        marca.create_text(220, 362, text="Sistema de facturación e inventario", fill=TEXTO_CLARO, font=(FUENTE, 12))
         y = 430
         for linea in ("Ventas con factura en PDF", "Control de inventario y compras", "Reportes de ventas y ganancias"):
             marca.create_oval(112, y - 4, 120, y + 4, fill=TEXTO_CLARO, outline="")
@@ -77,6 +100,7 @@ class Login(PantallaAcceso):
         self.link_registro = link
 
     def al_mostrar(self):
+        self.dibujar_marca()
         self.password.delete(0, "end")
         self.username.focus_set()
 
@@ -120,6 +144,7 @@ class Registro(PantallaAcceso):
         boton(self, "Volver a iniciar sesión", self.volver, "secundario").place(x=610, y=534, width=320, height=40)
 
     def al_mostrar(self):
+        self.dibujar_marca()
         for e in (self.username, self.password, self.confirmar, self.key):
             e.delete(0, "end")
         self.mostrar_mensaje("")
@@ -137,7 +162,7 @@ class Registro(PantallaAcceso):
             self.mostrar_mensaje("La contraseña debe tener al menos 6 caracteres.")
         elif pas != self.confirmar.get():
             self.mostrar_mensaje("Las contraseñas no coinciden.")
-        elif self.key.get() != config.CODIGO_REGISTRO:
+        elif self.key.get() != ajustes.obtener("codigo_registro"):
             self.mostrar_mensaje("El código de autorización no es correcto.")
         else:
             try:

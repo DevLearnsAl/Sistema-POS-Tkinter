@@ -2,6 +2,8 @@ import datetime
 import tkinter as tk
 from tkinter import messagebox
 
+import ajustes
+from configuracion import VentanaConfiguracion
 from estilos import FONDO, NAVY, NAVY_HOVER, BLANCO, AMBAR, TEXTO_CLARO, FUENTE, F_NEGRITA, F_PEQUE
 from ventas import Ventas
 from caja import Caja
@@ -54,7 +56,9 @@ class Container(tk.Frame):
     def barra_superior(self):
         self.barra = tk.Frame(self, bg=NAVY)
         self.barra.place(x=0, y=0, width=1100, height=ALTO_BARRA)
-        tk.Label(self.barra, text="MINIMARKET", font=(FUENTE, 14, "bold"), fg=BLANCO, bg=NAVY).place(x=18, y=8)
+        self.lbl_marca = tk.Label(self.barra, font=(FUENTE, 14, "bold"), fg=BLANCO, bg=NAVY, anchor="w")
+        self.lbl_marca.place(x=18, y=0, width=INICIO_PESTANAS - 26, height=ALTO_BARRA)
+        self.actualizar_marca()
 
         self.pestanas = {}
         self.btn_usuario = tk.Button(self.barra, text="", font=F_PEQUE, fg=TEXTO_CLARO, bg=NAVY,
@@ -100,6 +104,8 @@ class Container(tk.Frame):
             menu.add_command(label="Mi cuenta", command=self.mi_cuenta)
         if self.controlador.puede("usuarios"):
             menu.add_command(label="Usuarios", command=self.gestionar_usuarios)
+        if self.controlador.puede("configuracion"):
+            menu.add_command(label="Configuración", command=self.configurar)
         menu.add_separator()
         menu.add_command(label="Cerrar sesión", command=self.salir)
         x = self.btn_usuario.winfo_rootx()
@@ -115,6 +121,16 @@ class Container(tk.Frame):
     def gestionar_usuarios(self):
         if self.controlador.puede("usuarios"):
             VentanaUsuarios(self, self.controlador)
+
+    def configurar(self):
+        if self.controlador.puede("configuracion"):
+            VentanaConfiguracion(self, self.controlador)
+
+    def actualizar_marca(self):
+        """El nombre del negocio en la barra. Se vuelve a leer al guardar la configuración."""
+        nombre = ajustes.obtener("negocio_nombre").upper()
+        self.lbl_marca.config(text=nombre if len(nombre) <= 14 else nombre[:13] + "…",
+                              font=(FUENTE, 14 if len(nombre) <= 11 else 11, "bold"))
 
     # ------------------------------------------------------------------ módulos
     def show_frames(self, clase):

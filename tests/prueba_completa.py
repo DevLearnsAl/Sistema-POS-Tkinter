@@ -34,9 +34,14 @@ sd.askinteger = lambda *a, **k: RESPUESTA["entero"]
 ABIERTOS = []
 os.startfile = lambda ruta: ABIERTOS.append(ruta)
 
+import ajustes
+import config
 import crear_bd
 import db
+import registro
 from seguridad import verificar_password
+
+registro.iniciar()
 
 OK = 0
 
@@ -70,8 +75,8 @@ v1.execute("CREATE TABLE usuarios (id INTEGER PRIMARY KEY, username TEXT, passwo
 v1.commit()
 v1.close()
 aviso_v1 = crear_bd.preparar_base()
-check(os.path.exists("database_v1_respaldo.db") and crear_bd.version_actual() == 3
-      and "versión anterior" in aviso_v1, "base v1 respaldada y base v3 creada")
+check(os.path.exists("database_v1_respaldo.db") and crear_bd.version_actual() == crear_bd.VERSION_ESQUEMA
+      and "versión anterior" in aviso_v1, "base v1 respaldada y base nueva creada")
 shutil.copy(db.DB_NAME, "base_buena.db")
 
 # 2) Una base de la versión 2 se actualiza sin perder los datos.
@@ -81,9 +86,11 @@ v2.executescript("""
     CREATE TABLE usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE,
                            password TEXT NOT NULL, creado TEXT NOT NULL DEFAULT (datetime('now','localtime')));
     CREATE TABLE articulos (id INTEGER PRIMARY KEY AUTOINCREMENT, codigo TEXT UNIQUE, articulo TEXT NOT NULL UNIQUE,
-                            precio REAL NOT NULL, costo REAL NOT NULL, stock INTEGER NOT NULL,
-                            stock_minimo INTEGER NOT NULL DEFAULT 5, iva REAL NOT NULL DEFAULT 15,
-                            estado TEXT NOT NULL, image_path TEXT);
+                            precio REAL NOT NULL CHECK (precio > 0), costo REAL NOT NULL CHECK (costo >= 0),
+                            stock INTEGER NOT NULL CHECK (stock >= 0),
+                            stock_minimo INTEGER NOT NULL DEFAULT 5 CHECK (stock_minimo >= 0),
+                            iva REAL NOT NULL DEFAULT 15 CHECK (iva IN (0, 15)),
+                            estado TEXT NOT NULL CHECK (estado IN ('Activo', 'Inactivo')), image_path TEXT);
     CREATE TABLE ventas (factura INTEGER NOT NULL, cliente TEXT NOT NULL, codigo TEXT, articulo TEXT NOT NULL,
                          precio REAL NOT NULL, cantidad INTEGER NOT NULL, total REAL NOT NULL,
                          iva REAL NOT NULL DEFAULT 0, costo REAL NOT NULL, fecha TEXT NOT NULL, hora TEXT NOT NULL,
@@ -106,7 +113,8 @@ v2.executescript("""
 v2.commit()
 v2.close()
 aviso_v2 = crear_bd.preparar_base()
-check(crear_bd.version_actual() == 3 and "versión 3" in aviso_v2, "base v2 migrada a v3")
+check(crear_bd.version_actual() == crear_bd.VERSION_ESQUEMA and "versión 2 a la 4" in aviso_v2,
+      "base v2 migrada a v4 en un solo paso")
 check(valor("SELECT COUNT(*) FROM ventas") == 1 and valor("SELECT COUNT(*) FROM clientes") == 1
       and valor("SELECT articulo FROM articulos") == "Producto de la v2", "la migración conserva los datos")
 check(q("SELECT username, rol FROM usuarios ORDER BY username") == [("admin", "admin"), ("pedro", "cajero")],
@@ -114,6 +122,19 @@ check(q("SELECT username, rol FROM usuarios ORDER BY username") == [("admin", "a
 check(valor("SELECT activo FROM clientes") == 1 and valor("SELECT caja_id FROM ventas") is None
       and valor("SELECT COUNT(*) FROM cajas") == 0, "migración: columnas y tablas nuevas agregadas")
 check(os.path.isdir("respaldos") and len(os.listdir("respaldos")) >= 1, "respaldo automático al abrir")
+
+# La v3 solo admitía IVA 0 o 15; la v4 reconstruye la tabla para aceptar cualquier tasa.
+db.ejecutar("UPDATE articulos SET iva = 18 WHERE articulo = 'Producto de la v2'")
+check(valor("SELECT iva FROM articulos WHERE articulo = 'Producto de la v2'") == 18,
+      "migración: la tasa de impuesto ya no está atada al 15 %")
+try:
+    db.ejecutar("UPDATE articulos SET iva = 120 WHERE articulo = 'Producto de la v2'")
+    sin_limite = True
+except sqlite3.IntegrityError:
+    sin_limite = False
+check(not sin_limite, "pero sigue rechazando una tasa imposible (CHECK nuevo)")
+check(valor("SELECT COUNT(*) FROM configuracion") == 0 and ajustes.obtener("moneda_simbolo") == "C$",
+      "sin configuración guardada se usan los valores por defecto")
 
 # Se vuelve a la base con datos de ejemplo para probar la interfaz.
 os.remove(db.DB_NAME)
@@ -676,6 +697,89 @@ archivos = [f for f in os.listdir("reportes") if f.startswith("ventas_")]
 with open(os.path.join("reportes", archivos[0]), encoding="utf-8-sig") as f:
     lineas = f.read().splitlines()
 check(len(archivos) == 1 and lineas[0].startswith("Factura,Fecha") and len(lineas) > 20, "exportar ventas a CSV")
+
+# ================= CONFIGURACIÓN DEL NEGOCIO =================
+# Va al final porque cambia la moneda y el impuesto de toda la aplicación.
+from configuracion import VentanaConfiguracion
+import estilos
+
+check(app.puede("configuracion") and "configuracion" not in config.PERMISOS["cajero"],
+      "solo el administrador puede abrir la configuración")
+
+vc = VentanaConfiguracion(ct, app)
+check(vc.e["negocio_nombre"].get() == "Minimarket" and vc.e["moneda_simbolo"].get() == "C$",
+      "la configuración se abre con los valores vigentes")
+
+for clave, texto, esperado in [("negocio_nombre", "", "nombre del negocio es obligatorio"),
+                               ("moneda_simbolo", "", "símbolo de la moneda"),
+                               ("impuesto_nombre", "", "nombre del impuesto"),
+                               ("codigo_registro", "12", "al menos 4 caracteres"),
+                               ("moneda_decimales", "ocho", "deben ser números"),
+                               ("moneda_decimales", "9", "decimales van de 0 a 4"),
+                               ("impuesto_tasa", "150", "tasa del impuesto va de 0"),
+                               ("moneda_billetes", "100,abc", "separados por coma")]:
+    vc.cargar()
+    escribir(vc.e[clave], texto)
+    vc.guardar()
+    check(esperado in vc.lbl_mensaje.cget("text"), f"configuración rechaza: {clave} = «{texto}»")
+
+vc.cargar()
+escribir(vc.e["negocio_nombre"], "Pulpería La Esquina")
+escribir(vc.e["negocio_ruc"], "J0310000000099")
+escribir(vc.e["moneda_simbolo"], "$")
+escribir(vc.e["moneda_decimales"], "2")
+escribir(vc.e["moneda_billetes"], "50,100,500,1000")
+escribir(vc.e["impuesto_nombre"], "ITBMS")
+escribir(vc.e["impuesto_tasa"], "7")
+escribir(vc.e["factura_despedida"], "Gracias por preferirnos")
+vc.logo_nuevo = os.path.join("fotos", "agua.png")    # simula elegir un logo
+vc.aplicar_tasa.set(True)
+gravados = valor("SELECT COUNT(*) FROM articulos WHERE iva > 0")
+vc.guardar()
+
+check(ajustes.obtener("negocio_nombre") == "Pulpería La Esquina"
+      and valor("SELECT valor FROM configuracion WHERE clave = 'negocio_nombre'") == "Pulpería La Esquina",
+      "la configuración se guarda en la base")
+check(estilos.moneda(1234.5) == "$ 1,234.50" and ajustes.moneda(0) == "$ 0.00",
+      "el símbolo de la moneda cambia en toda la aplicación")
+check(ajustes.billetes() == [50, 100, 500, 1000], "los billetes del cobro rápido son configurables")
+check(ajustes.nombre_impuesto() == "ITBMS" and ajustes.tasa_impuesto() == 7,
+      "el impuesto se puede renombrar y cambiarle la tasa")
+check(valor("SELECT COUNT(*) FROM articulos WHERE iva = 7") == gravados
+      and valor("SELECT COUNT(*) FROM articulos WHERE iva = 15") == 0,
+      "la tasa nueva se aplica a los productos gravados")
+check(os.path.exists(ajustes.obtener("negocio_logo"))
+      and ajustes.obtener("negocio_logo").startswith("imagenes"), "el logo se copia junto al programa")
+check("Pulpería La Esquina" in app.title(), "el título de la ventana toma el nombre nuevo")
+check(ct.lbl_marca.cget("text").startswith("PULPER"), "la barra superior toma el nombre nuevo")
+ct.show_frames(Ventas)
+check(v.titulos["lbl_iva"].cget("text") == "ITBMS" and v.tree.heading("iva")["text"] == "ITBMS"
+      and "ITBMS" in v.lbl_nota_impuesto.cget("text"),
+      "Ventas se renombra al impuesto nuevo sin reiniciar")
+
+app.show_frame(Login)
+check("Pulpería La Esquina" in str(lg.marca.itemcget(lg.marca.find_all()[-4], "text"))
+      or any("Pulpería" in str(lg.marca.itemcget(i, "text"))
+             for i in lg.marca.find_all() if lg.marca.type(i) == "text"),
+      "el inicio de sesión muestra el nombre nuevo")
+
+# La factura se arma con la configuración nueva.
+import factura
+numero_factura = valor("SELECT MAX(factura) FROM ventas")
+ruta_pdf = factura.generar_pdf(factura.datos_desde_bd(numero_factura))
+check(os.path.exists(ruta_pdf) and os.path.getsize(ruta_pdf) > 1000, "la factura se genera con la configuración nueva")
+
+# ================= REGISTRO DE ERRORES =================
+try:
+    raise ValueError("error de prueba")
+except ValueError as e:
+    app.report_callback_exception(ValueError, e, None)
+check("Error inesperado" in [m[1] for m in MENSAJES][-1] if MENSAJES else False,
+      "un error no controlado avisa al usuario en vez de cerrarse en silencio")
+with open(registro.ARCHIVO, encoding="utf-8") as f:
+    contenido = f.read()
+check("error de prueba" in contenido and "Minimarket v" in contenido,
+      "el error queda anotado en logs/minimarket.log para dar soporte")
 
 app.destroy()
 print(f"\nTODAS LAS PRUEBAS PASARON: {OK}")

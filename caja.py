@@ -14,6 +14,7 @@ import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+import ajustes
 import db
 from estilos import (FONDO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, ROJO, AMBAR, FUENTE, F_PEQUE, F_NORMAL,
                      F_NEGRITA, F_SUBTITULO, F_TITULO, F_GRANDE, moneda, boton, panel, etiqueta, campo,
@@ -203,7 +204,7 @@ class VentanaAbrirCaja:
         etiqueta(top, "Escriba el efectivo con el que arranca el turno. Si arranca sin fondo, dejá 0.",
                  F_PEQUE, TEXTO_SUAVE, wraplength=364, justify="left").place(x=28, y=64)
 
-        etiqueta(top, "Monto inicial (C$)", F_NEGRITA, TEXTO).place(x=28, y=116)
+        etiqueta(top, f"Monto inicial ({ajustes.simbolo()})", F_NEGRITA, TEXTO).place(x=28, y=116)
         self.entry = campo(top)
         self.entry.place(x=28, y=142, width=364, height=42)
         self.entry.insert(0, "0.00")
@@ -218,11 +219,11 @@ class VentanaAbrirCaja:
         self.entry.select_range(0, "end")
 
     def confirmar(self):
-        try:
-            monto = round(float(self.entry.get().replace("C$", "").replace(",", "").strip()), 2)
-        except ValueError:
+        monto = ajustes.leer_monto(self.entry.get())
+        if monto is None:
             self.lbl_error.config(text="Escriba un monto válido (por ejemplo 500.00).")
             return
+        monto = round(monto, 2)
         if monto < 0:
             self.lbl_error.config(text="El monto no puede ser negativo.")
             return
@@ -256,7 +257,7 @@ class VentanaMovimiento:
         top = self.top = ventana_modal(caja, titulo, 440, 360)
         etiqueta(top, titulo, F_SUBTITULO, TEXTO, wraplength=384, justify="left").place(x=28, y=22)
 
-        etiqueta(top, "Monto (C$)", F_NEGRITA, TEXTO).place(x=28, y=80)
+        etiqueta(top, f"Monto ({ajustes.simbolo()})", F_NEGRITA, TEXTO).place(x=28, y=80)
         self.entry_monto = campo(top)
         self.entry_monto.place(x=28, y=106, width=384, height=40)
         self.entry_monto.bind("<Return>", lambda e: self.confirmar())
@@ -275,11 +276,11 @@ class VentanaMovimiento:
         self.entry_monto.focus_set()
 
     def confirmar(self):
-        try:
-            monto = round(float(self.entry_monto.get().replace("C$", "").replace(",", "").strip()), 2)
-        except ValueError:
+        monto = ajustes.leer_monto(self.entry_monto.get())
+        if monto is None:
             self.lbl_error.config(text="Escriba un monto válido.")
             return
+        monto = round(monto, 2)
         if monto <= 0:
             self.lbl_error.config(text="El monto debe ser mayor que cero.")
             return
@@ -324,7 +325,7 @@ class VentanaCerrarCaja:
         etiqueta(top, "Efectivo esperado", F_NEGRITA, TEXTO).place(x=28, y=224)
         etiqueta(top, moneda(self.datos["esperado"]), F_SUBTITULO, NAVY).place(x=432, y=222, anchor="ne")
 
-        etiqueta(top, "Efectivo contado (C$)", F_NEGRITA, TEXTO).place(x=28, y=272)
+        etiqueta(top, f"Efectivo contado ({ajustes.simbolo()})", F_NEGRITA, TEXTO).place(x=28, y=272)
         self.monto = tk.StringVar()
         self.entry = ttk.Entry(top, textvariable=self.monto, font=(FUENTE, 16))
         self.entry.place(x=28, y=298, width=404, height=44)
@@ -348,10 +349,8 @@ class VentanaCerrarCaja:
         self.actualizar_diferencia()
 
     def leer(self):
-        try:
-            return round(float(self.monto.get().replace("C$", "").replace(",", "").strip()), 2)
-        except ValueError:
-            return None
+        monto = ajustes.leer_monto(self.monto.get())
+        return None if monto is None else round(monto, 2)
 
     def actualizar_diferencia(self):
         contado = self.leer()

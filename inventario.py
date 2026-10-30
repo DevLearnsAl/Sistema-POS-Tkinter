@@ -10,6 +10,7 @@ from tkinter import ttk, messagebox, filedialog
 
 from PIL import Image, ImageOps, ImageTk
 
+import ajustes
 import db
 from estilos import (FONDO, BLANCO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, VERDE_FONDO, ROJO, ROJO_FONDO, AMBAR,
                      AMBAR_FONDO, GRIS_FONDO, CLARO, FUENTE, F_PEQUE, F_NEGRITA, F_SUBTITULO, F_TITULO, moneda,
@@ -95,7 +96,7 @@ class Inventario(tk.Frame):
         self.det_badge = tk.Label(self.det, font=(FUENTE, 9, "bold"), padx=8, pady=2)
         self.det_badge.place(x=147, y=94)
         self.det_valores = {}
-        for i, clave in enumerate(["Precio", "Costo", "Margen", "Stock", "Stock mínimo", "IVA", "Estado"]):
+        for i, clave in enumerate(["Precio", "Costo", "Margen", "Stock", "Stock mínimo", "Impuesto", "Estado"]):
             y = 138 + i * 30
             etiqueta(self.det, clave, F_PEQUE, TEXTO_SUAVE).place(x=15, y=y)
             v = etiqueta(self.det, "", F_NEGRITA, TEXTO)
@@ -208,7 +209,7 @@ class Inventario(tk.Frame):
         margen = (precio_sin_iva - p["costo"]) / precio_sin_iva * 100 if precio_sin_iva else 0
         valores = {"Precio": moneda(p["precio"]), "Costo": moneda(p["costo"]), "Margen": f"{margen:.1f} %",
                    "Stock": f"{p['stock']} unidades", "Stock mínimo": str(p["stock_minimo"]),
-                   "IVA": f"Gravado {p['iva']:.0f} %" if p["iva"] else "Exento", "Estado": p["estado"]}
+                   "Impuesto": f"Gravado {p['iva']:g} %" if p["iva"] else "Exento", "Estado": p["estado"]}
         for clave, valor in valores.items():
             self.det_valores[clave].config(text=valor, fg=TEXTO)
         self.det_valores["Estado"].config(fg=VERDE if p["estado"] == "Activo" else ROJO)
@@ -264,12 +265,13 @@ def _nombre_archivo(texto):
 class FormularioProducto:
     """Mismo formulario para crear y para editar un producto."""
 
-    OPCIONES_IVA = ["Gravado 15 %", "Exento"]
 
     def __init__(self, inventario, producto=None):
         self.inv = inventario
         self.producto = producto
         self.imagen_nueva = None
+        # La tasa sale de la configuración: el mismo programa sirve con otro impuesto.
+        self.opciones_iva = [f"Gravado {ajustes.tasa_impuesto():g} %", "Exento"]
         titulo = "Editar producto" if producto else "Nuevo producto"
         top = self.top = ventana_modal(inventario, titulo, 720, 520)
         top.formulario = self
@@ -279,11 +281,13 @@ class FormularioProducto:
         self._fila("articulo", "Nombre del producto *", 28, 70, 416)
         self._fila("codigo", "Código de barras", 28, 140, 300)
         boton(top, "Generar código", self.generar_codigo, "secundario", F_PEQUE).place(x=336, y=160, width=108, height=36)
-        self._fila("precio", "Precio de venta (C$, IVA incluido) *", 28, 210, 200)
-        self._fila("costo", "Costo (C$) *", 244, 210, 200)
+        self._fila("precio", f"Precio de venta ({ajustes.simbolo()}, {ajustes.nombre_impuesto()} incluido) *",
+                   28, 210, 200)
+        self._fila("costo", f"Costo ({ajustes.simbolo()}) *", 244, 210, 200)
         self._fila("stock", "Stock *", 28, 280, 200)
         self._fila("stock_minimo", "Stock mínimo (alerta)", 244, 280, 200)
-        self._fila("iva", "IVA", 28, 350, 200, lista(top, values=self.OPCIONES_IVA, state="readonly"))
+        self._fila("iva", ajustes.nombre_impuesto(), 28, 350, 200,
+                   lista(top, values=self.opciones_iva, state="readonly"))
         self._fila("estado", "Estado", 244, 350, 200, lista(top, values=["Activo", "Inactivo"], state="readonly"))
 
         marco = tk.Frame(top, bg=CLARO, highlightthickness=1, highlightbackground=BORDE)
@@ -306,12 +310,12 @@ class FormularioProducto:
             self.e["costo"].insert(0, f"{producto['costo']:.2f}")
             self.e["stock"].insert(0, str(producto["stock"]))
             self.e["stock_minimo"].insert(0, str(producto["stock_minimo"]))
-            self.e["iva"].set(self.OPCIONES_IVA[0] if producto["iva"] else self.OPCIONES_IVA[1])
+            self.e["iva"].set(self.opciones_iva[0] if producto["iva"] else self.opciones_iva[1])
             self.e["estado"].set(producto["estado"])
         else:
             self.e["stock"].insert(0, "0")
             self.e["stock_minimo"].insert(0, "5")
-            self.e["iva"].set(self.OPCIONES_IVA[0])
+            self.e["iva"].set(self.opciones_iva[0])
             self.e["estado"].set("Activo")
         self.mostrar_imagen(producto["image_path"] if producto else None)
         self.e["articulo"].focus_set()
@@ -369,7 +373,7 @@ class FormularioProducto:
         if codigo and not re.fullmatch(r"[0-9A-Za-z-]{1,20}", codigo):
             self.lbl_error.config(text="El código solo puede tener letras, números y guiones (máximo 20).")
             return
-        iva = 15 if v["iva"] == self.OPCIONES_IVA[0] else 0
+        iva = ajustes.tasa_impuesto() if v["iva"] == self.opciones_iva[0] else 0
 
         ruta = self.producto["image_path"] if self.producto else FOTO_DEFECTO
         if self.imagen_nueva:

@@ -4,6 +4,7 @@ import sqlite3
 import tkinter as tk
 from tkinter import ttk
 
+import ajustes
 import db
 from estilos import (FONDO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, ROJO, F_PEQUE, F_NORMAL, F_SUBTITULO, F_CAMPO,
                      moneda, boton, panel, etiqueta, campo, lista, tabla, llenar_tabla)
@@ -39,7 +40,7 @@ class Compras(tk.Frame):
         etiqueta(f, "Cantidad *", F_PEQUE, TEXTO_SUAVE).place(x=16, y=218)
         self.entry_cantidad = ttk.Spinbox(f, from_=1, to=99999, font=F_CAMPO)
         self.entry_cantidad.place(x=16, y=240, width=185, height=36)
-        etiqueta(f, "Costo unitario (C$) *", F_PEQUE, TEXTO_SUAVE).place(x=217, y=218)
+        etiqueta(f, f"Costo unitario ({ajustes.simbolo()}) *", F_PEQUE, TEXTO_SUAVE).place(x=217, y=218)
         self.entry_costo = campo(f)
         self.entry_costo.place(x=217, y=240, width=185, height=36)
         for w in (self.entry_cantidad, self.entry_costo):

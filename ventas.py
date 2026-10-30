@@ -3,6 +3,7 @@ import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 
+import ajustes
 import caja
 import db
 import factura
@@ -78,7 +79,8 @@ class Ventas(tk.Frame):
         c = panel(self, "Productos en la venta")
         c.place(x=16, y=214, width=720, height=376)
         columnas = [("n", "#", 40, "center"), ("codigo", "Código", 120, "center"), ("producto", "Producto", 196, "w"),
-                    ("precio", "Precio", 86, "e"), ("cant", "Cant.", 56, "center"), ("iva", "IVA", 80, "e"),
+                    ("precio", "Precio", 86, "e"), ("cant", "Cant.", 56, "center"),
+                    ("iva", ajustes.nombre_impuesto(), 80, "e"),
                     ("total", "Total", 96, "e")]
         marco, self.tree = tabla(c, columnas)
         marco.place(x=16, y=44, width=688, height=270)
@@ -93,10 +95,15 @@ class Ventas(tk.Frame):
         # ---- Resumen ----
         r = panel(self, "Resumen")
         r.place(x=752, y=16, width=332, height=574)
-        filas = [("Artículos", "lbl_articulos"), ("Subtotal (sin IVA)", "lbl_subtotal"), ("IVA", "lbl_iva")]
-        for i, (texto, atributo) in enumerate(filas):
+        # Los títulos que nombran el impuesto se guardan para poder renombrarlos
+        # cuando cambia la configuración, sin reiniciar el programa.
+        self.titulos = {}
+        for i, (texto, atributo) in enumerate([("Artículos", "lbl_articulos"), ("", "lbl_subtotal"),
+                                               ("", "lbl_iva")]):
             y = 56 + i * 34
-            etiqueta(r, texto, F_NORMAL, TEXTO_SUAVE).place(x=16, y=y)
+            titulo = etiqueta(r, texto, F_NORMAL, TEXTO_SUAVE)
+            titulo.place(x=16, y=y)
+            self.titulos[atributo] = titulo
             lbl = etiqueta(r, "0", F_NEGRITA, TEXTO)
             lbl.place(x=314, y=y, anchor="ne")
             setattr(self, atributo, lbl)
@@ -109,8 +116,8 @@ class Ventas(tk.Frame):
         self.btn_cobrar.place(x=16, y=268, width=298, height=54)
         boton(r, "Ventas realizadas", self.ver_ventas_realizadas, "secundario").place(x=16, y=334, width=298, height=40)
         tk.Frame(r, bg=BORDE).place(x=16, y=392, width=298, height=1)
-        etiqueta(r, "Los precios incluyen IVA. Los productos de la canasta básica están exentos.",
-                 F_PEQUE, TEXTO_SUAVE, wraplength=296, justify="left").place(x=16, y=404)
+        self.lbl_nota_impuesto = etiqueta(r, "", F_PEQUE, TEXTO_SUAVE, wraplength=296, justify="left")
+        self.lbl_nota_impuesto.place(x=16, y=404)
         self.lbl_cajero = etiqueta(r, "", F_PEQUE, TEXTO_SUAVE, justify="left")
         self.lbl_cajero.place(x=16, y=520)
 
@@ -118,11 +125,21 @@ class Ventas(tk.Frame):
 
     # ------------------------------------------------------------------ datos
     def al_mostrar(self):
+        self.aplicar_configuracion()
         self.cargar_productos()
         self.cargar_clientes()
         self.actualizar_numero_factura()
         self.actualizar_caja()
         self.entry_producto.focus_set()
+
+    def aplicar_configuracion(self):
+        """Pone el nombre del impuesto que tenga configurado el negocio."""
+        impuesto = ajustes.nombre_impuesto()
+        self.titulos["lbl_subtotal"].config(text=f"Subtotal (sin {impuesto})")
+        self.titulos["lbl_iva"].config(text=impuesto)
+        self.tree.heading("iva", text=impuesto)
+        self.lbl_nota_impuesto.config(text=f"Los precios incluyen {impuesto}. Los productos exentos no lo suman.")
+        self.refrescar_carrito()
 
     def actualizar_caja(self):
         """Muestra el turno de caja y bloquea el cobro si no hay ninguno abierto."""
@@ -193,7 +210,8 @@ class Ventas(tk.Frame):
             self.lbl_info.config(text="")
             return
         d = self.productos[nombre]
-        iva = f"IVA {d['iva']:.0f} %" if d["iva"] else "Exento de IVA"
+        impuesto = ajustes.nombre_impuesto()
+        iva = f"{impuesto} {d['iva']:g} %" if d["iva"] else f"Exento de {impuesto}"
         self.lbl_info.config(text=f"Precio {moneda(d['precio'])}\nDisponible: {d['stock']}\n{iva}")
 
     # ------------------------------------------------------------------ carrito
@@ -410,8 +428,6 @@ class Ventas(tk.Frame):
 class VentanaCobro:
     """Ventana de cobro: método de pago, monto recibido y cambio en vivo."""
 
-    BILLETES = [100, 200, 500, 1000]
-
     def __init__(self, ventas, total):
         self.ventas = ventas
         self.total = total
@@ -438,7 +454,7 @@ class VentanaCobro:
         self.monto.trace_add("write", lambda *args: self.actualizar_cambio())
 
         self.rapidos = []
-        opciones = [("Exacto", total)] + [(f"C$ {b:,}", b) for b in self.BILLETES]
+        opciones = [("Exacto", total)] + [(f"{ajustes.simbolo()} {b:,}", b) for b in ajustes.billetes()]
         for i, (texto, valor) in enumerate(opciones):
             b = boton(top, texto, lambda v=valor: self.poner_monto(v), "secundario", F_PEQUE)
             b.place(x=28 + i * 78, y=322, width=72, height=34)
@@ -476,11 +492,7 @@ class VentanaCobro:
         self.actualizar_cambio()
 
     def leer_monto(self):
-        texto = self.entry_monto.get().replace("C$", "").replace(",", "").strip()
-        try:
-            return float(texto)
-        except ValueError:
-            return None
+        return ajustes.leer_monto(self.entry_monto.get())
 
     def actualizar_cambio(self):
         if self.metodo == "Tarjeta":

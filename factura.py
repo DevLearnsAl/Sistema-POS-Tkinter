@@ -5,9 +5,10 @@ import sys
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-import config
+import ajustes
 import db
 from utilidades import fecha_corta
 
@@ -37,14 +38,33 @@ def datos_desde_bd(numero):
                         "iva": r[5]} for r in filas]}
 
 
+def _logo(ruta, alto):
+    """Devuelve (imagen, ancho) para dibujar el logo, o None si no se puede usar."""
+    if not ruta or not os.path.exists(ruta):
+        return None
+    try:
+        imagen = ImageReader(ruta)
+        ancho_original, alto_original = imagen.getSize()
+        return imagen, alto * ancho_original / alto_original
+    except Exception:
+        return None
+
+
 def _encabezado(c, d, pagina):
+    negocio = ajustes.negocio()
     c.setFillColor(NAVY)
     c.rect(0, ALTO - 96, ANCHO, 96, stroke=0, fill=1)
     c.setFillColor(colors.white)
+    x = M
+    logo = _logo(negocio["logo"], 44)
+    if logo:
+        imagen, ancho = logo
+        c.drawImage(imagen, M, ALTO - 72, width=ancho, height=44, mask="auto")
+        x = M + ancho + 14
     c.setFont("Helvetica-Bold", 22)
-    c.drawString(M, ALTO - 50, config.NEGOCIO["nombre"].upper())
+    c.drawString(x, ALTO - 50, negocio["nombre"].upper()[:28])
     c.setFont("Helvetica", 10)
-    c.drawString(M, ALTO - 68, "Sistema de facturación e inventario")
+    c.drawString(x, ALTO - 68, "Sistema de facturación e inventario")
     c.setFont("Helvetica-Bold", 20)
     c.drawRightString(ANCHO - M, ALTO - 50, "FACTURA")
     c.setFont("Helvetica", 11)
@@ -70,7 +90,7 @@ def _sello_anulada(c, d):
 
 
 COLUMNAS = [("Código", M + 8, "l"), ("Descripción", M + 104, "l"), ("Cant.", 372, "r"), ("Precio", 442, "r"),
-            ("IVA", 504, "r"), ("Total", ANCHO - M - 8, "r")]
+            ("Imp.", 504, "r"), ("Total", ANCHO - M - 8, "r")]
 
 
 def _cabecera_tabla(c, y):
@@ -96,12 +116,13 @@ def generar_pdf(d):
     ruta = os.path.join("facturas", f"Factura_{d['numero']}.pdf")
     c = canvas.Canvas(ruta, pagesize=letter)
     c.setTitle(f"Factura {d['numero']:06d}")
-    c.setAuthor(config.NEGOCIO["nombre"])
+    c.setAuthor(ajustes.obtener("negocio_nombre"))
 
     total = round(sum(l["total"] for l in d["lineas"]), 2)
     iva = round(sum(l["iva"] for l in d["lineas"]), 2)
     subtotal = round(total - iva, 2)
-    n = config.NEGOCIO
+    n = ajustes.negocio()
+    impuesto = ajustes.nombre_impuesto()
 
     pagina = 1
     y = _encabezado(c, d, pagina) - 30
@@ -163,13 +184,13 @@ def generar_pdf(d):
     # Totales
     y -= 22
     x_etiqueta, x_valor = ANCHO - M - 210, ANCHO - M
-    filas = [("Subtotal (sin IVA)", subtotal), (f"IVA {config.TASA_IVA} %", iva)]
+    filas = [(f"Subtotal (sin {impuesto})", subtotal), (f"{impuesto} {ajustes.tasa_impuesto():g} %", iva)]
     c.setFont("Helvetica", 10)
     for etiqueta, valor in filas:
         c.setFillColor(SUAVE)
         c.drawString(x_etiqueta, y, etiqueta)
         c.setFillColor(TEXTO)
-        c.drawRightString(x_valor, y, f"C$ {valor:,.2f}")
+        c.drawRightString(x_valor, y, ajustes.moneda(valor))
         y -= 16
     y -= 6
     c.setFillColor(NAVY)
@@ -177,7 +198,7 @@ def generar_pdf(d):
     c.setFillColor(colors.white)
     c.setFont("Helvetica-Bold", 12)
     c.drawString(x_etiqueta, y - 5, "TOTAL")
-    c.drawRightString(x_valor - 8, y - 5, f"C$ {total:,.2f}")
+    c.drawRightString(x_valor - 8, y - 5, ajustes.moneda(total))
     y -= 34
     recibido = d.get("recibido")
     if recibido is not None:
@@ -189,19 +210,20 @@ def generar_pdf(d):
             c.setFillColor(SUAVE)
             c.drawString(x_etiqueta, y, etiqueta)
             c.setFillColor(TEXTO)
-            c.drawRightString(x_valor, y, f"C$ {valor:,.2f}")
+            c.drawRightString(x_valor, y, ajustes.moneda(valor))
             y -= 16
 
     # Notas y pie
     c.setFillColor(SUAVE)
     c.setFont("Helvetica", 8.5)
-    c.drawString(M, 110, "Precios en córdobas, IVA incluido. Los productos de la canasta básica están exentos de IVA.")
-    c.drawString(M, 97, "Conserve esta factura como comprobante de su compra.")
+    c.drawString(M, 110, f"Precios con {impuesto} incluido. Los productos exentos van marcados en la "
+                         "columna «Imp.».")
+    c.drawString(M, 97, ajustes.obtener("factura_nota"))
     c.setStrokeColor(BORDE)
     c.line(M, 80, ANCHO - M, 80)
     c.setFillColor(NAVY)
     c.setFont("Helvetica-Bold", 12)
-    c.drawCentredString(ANCHO / 2, 58, "¡Gracias por su compra!")
+    c.drawCentredString(ANCHO / 2, 58, ajustes.obtener("factura_despedida"))
     c.setFillColor(SUAVE)
     c.setFont("Helvetica", 8.5)
     c.drawCentredString(ANCHO / 2, 42, f"{n['nombre']}  ·  {n['direccion']}  ·  {n['telefono']}")

@@ -1,31 +1,21 @@
-"""Datos del negocio y parámetros generales. Cambialos aquí y se reflejan en
-toda la aplicación y en las facturas."""
+"""Parámetros del programa.
 
-VERSION = "3.0"
+Acá va lo que es igual en toda instalación. Lo que cambia de un negocio a otro
+(nombre, RUC, logo, moneda, tasa de impuesto, código de registro) está en la
+base de datos y se edita desde la pantalla de Configuración: ver `ajustes.py`.
+"""
 
-NEGOCIO = {
-    "nombre": "Minimarket",
-    "ruc": "J0000000000000",
-    "direccion": "Managua, Nicaragua",
-    "telefono": "+505 2222 0000",
-    "correo": "info@minimarket.com",
-}
+VERSION = "4.0"
 
-# Tasa general de IVA en Nicaragua. Cada producto puede ser gravado (15) o exento (0).
-TASA_IVA = 15
-
-# Código que se pide para crear usuarios nuevos desde la pantalla de registro.
-# Los usuarios creados así entran como cajeros; el rol lo cambia un administrador.
-CODIGO_REGISTRO = "1234"
-
-# Respaldos automáticos de la base al abrir el programa.
+# Carpetas que el programa crea junto a database.db.
 CARPETA_RESPALDOS = "respaldos"
+CARPETA_LOGS = "logs"
 RESPALDOS_A_CONSERVAR = 10
 
 # Qué puede hacer cada rol. El cajero vende; lo que afecta plata, precios o
 # historial queda para el administrador.
 PERMISOS = {
     "admin": {"compras", "proveedores", "reportes", "editar_inventario", "anular", "usuarios", "ver_costos",
-              "ver_todas_las_cajas"},
+              "ver_todas_las_cajas", "configuracion"},
     "cajero": set(),
 }

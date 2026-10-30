@@ -5,6 +5,11 @@ partes y un cambio de color se hace en un solo lugar."""
 import tkinter as tk
 from tkinter import ttk
 
+# El formato de los montos depende del negocio (símbolo y decimales), así que
+# vive en ajustes.py. Se reexporta acá porque todas las pantallas ya lo piden a
+# este módulo. `ajustes` no importa `estilos`, así que no hay círculo.
+from ajustes import moneda  # noqa: F401  (reexportado a propósito)
+
 FUENTE = "Segoe UI"
 
 # Paleta
@@ -46,10 +51,6 @@ TIPOS_BOTON = {
     "peligro": (ROJO, "white", ROJO_HOVER),
     "secundario": (CLARO, NAVY, CLARO_HOVER),
 }
-
-
-def moneda(valor):
-    return f"C$ {valor:,.2f}"
 
 
 def boton(padre, texto, comando, tipo="primario", fuente=F_NEGRITA):
