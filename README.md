@@ -27,8 +27,9 @@ impuesto y los textos de la factura se configuran desde el propio programa.
   sistema calcula lo que debería haber y muestra el **faltante o sobrante**. Registra las
   entradas y salidas de efectivo que no son ventas. Sin caja abierta no se puede cobrar.
 - **Ventas realizadas.** Historial por factura con filtros (número, cliente, período y
-  estado), reimpresión y **anulación** de facturas: la factura no se borra, queda anulada
-  y el stock vuelve al inventario.
+  estado), **detalle de la factura en pantalla**, reimpresión, **devolución de productos
+  sueltos** y **anulación** de la factura completa. Nada se borra: lo devuelto vuelve al
+  inventario y la factura queda con el monto neto.
 - **Compras.** Entrada de mercadería por proveedor: suma el stock y actualiza el costo. Si
   se paga con el efectivo de la caja, queda registrada como salida del turno.
 - **Inventario.** Tarjetas con foto y estado del stock (normal, bajo, agotado, inactivo),
@@ -53,7 +54,7 @@ impuesto y los textos de la factura se configuran desde el propio programa.
 | Abrir y cerrar su caja | ✓ | ✓ |
 | Ver el historial de ventas | ✓ | ✓ |
 | Consultar inventario y clientes | ✓ | ✓ |
-| Anular facturas | | ✓ |
+| Anular facturas y registrar devoluciones | | ✓ |
 | Crear y editar productos | | ✓ |
 | Compras y proveedores | | ✓ |
 | Reportes (ve costos y ganancias) | | ✓ |
@@ -99,9 +100,10 @@ py tests/prueba_completa.py
 ```
 
 Maneja la interfaz como un usuario sobre una copia temporal del proyecto (no toca tu
-base de datos) y comprueba 175 casos: migraciones, login y roles, permisos del cajero,
+base de datos) y comprueba 188 casos: migraciones, login y roles, permisos del cajero,
 creación de usuarios, apertura y cierre de caja con su arqueo, ventas con código de barras e
-impuesto, cobro en efectivo y tarjeta, stock insuficiente, anulación, inventario, compras
+impuesto, cobro en efectivo y tarjeta, stock insuficiente, devoluciones, anulación,
+inventario, compras
 pagadas de la caja, clientes, proveedores, reportes, configuración del negocio y registro de
 errores.
 
@@ -125,7 +127,9 @@ esperado   = monto inicial + ventas en efectivo + entradas - salidas
 diferencia = contado - esperado        (negativo = falta, positivo = sobra)
 ```
 
-Las facturas anuladas no suman, porque ese dinero se devolvió.
+Las facturas anuladas no suman, porque ese dinero se devolvió. Las devoluciones tampoco
+  llevan un movimiento de caja aparte: las líneas quedan con el monto neto, así que el
+  arqueo ya las descuenta. Anotarlas además como salida descontaría dos veces lo mismo.
 
 ### Estructura del proyecto
 
@@ -154,6 +158,16 @@ Las facturas anuladas no suman, porque ese dinero se devolvió.
 | `utilidades.py` | Cálculo de IVA, códigos EAN-13 y búsqueda de productos |
 | `tests/` | Prueba completa del sistema |
 | `fotos/`, `imagenes/` | Fotos de productos e ícono de la aplicación |
+
+### Devoluciones
+
+De una factura se pueden devolver algunas unidades sin anularla entera. La línea queda con
+las unidades que de verdad se vendieron, se le recalculan el total y el impuesto, y lo
+devuelto vuelve al inventario. Si no queda nada vendido, la factura pasa a anulada.
+
+| | |
+|---|---|
+| <img src="docs/capturas/historial.png" alt="Historial con el detalle de la factura" width="420"> | <img src="docs/capturas/devolucion.png" alt="Ventana de devolución" width="420"> |
 
 ### Un solo programa para varios negocios
 
@@ -195,7 +209,6 @@ pantallas en SVG).
 ## Próximas mejoras
 
 - Instalador `.exe` para no depender de que Python esté instalado.
-- Devoluciones parciales: hoy solo se puede anular la factura completa.
 - Venta al crédito con saldo por cliente y abonos.
 - Descuentos por línea y sobre el total.
 - Guardar el dinero en centavos enteros en lugar de números decimales (`REAL`).

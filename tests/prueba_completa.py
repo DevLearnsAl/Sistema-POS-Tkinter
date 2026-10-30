@@ -113,8 +113,9 @@ v2.executescript("""
 v2.commit()
 v2.close()
 aviso_v2 = crear_bd.preparar_base()
-check(crear_bd.version_actual() == crear_bd.VERSION_ESQUEMA and "versión 2 a la 4" in aviso_v2,
-      "base v2 migrada a v4 en un solo paso")
+check(crear_bd.version_actual() == crear_bd.VERSION_ESQUEMA
+      and f"versión 2 a la {crear_bd.VERSION_ESQUEMA}" in aviso_v2,
+      "una base v2 se migra hasta la actual en un solo arranque")
 check(valor("SELECT COUNT(*) FROM ventas") == 1 and valor("SELECT COUNT(*) FROM clientes") == 1
       and valor("SELECT articulo FROM articulos") == "Producto de la v2", "la migración conserva los datos")
 check(q("SELECT username, rol FROM usuarios ORDER BY username") == [("admin", "admin"), ("pedro", "cajero")],
@@ -135,6 +136,10 @@ except sqlite3.IntegrityError:
 check(not sin_limite, "pero sigue rechazando una tasa imposible (CHECK nuevo)")
 check(valor("SELECT COUNT(*) FROM configuracion") == 0 and ajustes.obtener("moneda_simbolo") == "C$",
       "sin configuración guardada se usan los valores por defecto")
+check(valor("SELECT devuelto FROM ventas") == 0, "migración: la columna de devoluciones arranca en cero")
+db.ejecutar("UPDATE ventas SET cantidad = 0 WHERE articulo = 'Producto de la v2'")
+check(valor("SELECT cantidad FROM ventas") == 0,
+      "migración: una línea devuelta por completo puede quedar en cero")
 
 # Se vuelve a la base con datos de ejemplo para probar la interfaz.
 os.remove(db.DB_NAME)
@@ -154,6 +159,10 @@ from reportes import Reportes
 app = Manager()
 app.withdraw()
 app.update()
+
+
+def moneda_txt(valor_):
+    return ajustes.moneda(valor_)
 
 
 def ultimo():
@@ -429,6 +438,7 @@ check(not negativo, "la base rechaza stock negativo (CHECK)")
 
 # ================= HISTORIAL Y ANULACIÓN =================
 v.ver_ventas_realizadas()
+hist = v.historial
 h = ventanas(v)[-1]
 arbol = next(w for w in recorrer(h) if isinstance(w, ttk.Treeview))
 check(len(arbol.get_children()) == valor("SELECT COUNT(DISTINCT factura) FROM ventas"), "historial: una fila por factura")
@@ -455,6 +465,64 @@ boton(h, "Anular factura").invoke()
 check("ya está anulada" in ultimo(), "no se anula dos veces")
 boton(h, "Ver factura").invoke()
 check(ABIERTOS[-1].endswith(f"Factura_{numero}.pdf"), "reimprimir factura anulada")
+
+# ---- Detalle de la factura y devolución parcial ----
+escribir(entradas[0], str(siguiente)); boton(h, "Buscar").invoke()
+arbol.selection_set(arbol.get_children()[0])
+app.update()
+check(len(hist.tree_detalle.get_children()) == 3
+      and "Coca-Cola 1.5 L" in [hist.tree_detalle.item(i, "values")[1] for i in hist.tree_detalle.get_children()],
+      "el historial muestra el detalle de la factura sin abrir el PDF")
+
+stock_coca_antes = valor("SELECT stock FROM articulos WHERE articulo = 'Coca-Cola 1.5 L'")
+esperado_antes = mod_caja.resumen(caja_id)["esperado"]
+total_factura_antes = valor("SELECT SUM(total) FROM ventas WHERE factura = ?", (siguiente,))
+hist.devolver()
+dev = hist.devolucion
+rowids = list(dev.cantidades)
+dev.cantidades[rowids[0]].set(99)
+dev.confirmar()
+check("no pueden superar" in dev.lbl_error.cget("text"), "no se puede devolver más de lo vendido")
+dev.cantidades[rowids[0]].set(0)
+dev.confirmar()
+check("al menos una unidad" in dev.lbl_error.cget("text"), "hay que elegir algo para devolver")
+dev.cantidades[rowids[0]].set(1)
+dev.actualizar_total()
+check(dev.lbl_total.cget("text") == moneda_txt(55.0), "calcula el monto a devolver")
+app.update()
+# El marco con scroll tiene que tomar el ancho de la ventana: si no, las filas
+# quedan de un píxel y la lista se ve vacía aunque los datos estén.
+check(dev.cantidades[rowids[0]].master.winfo_width() > 400,
+      f"las filas de la devolución ocupan el ancho ({dev.cantidades[rowids[0]].master.winfo_width()} px)")
+RESPUESTA["si_no"] = True
+dev.confirmar()
+
+linea = db.uno("SELECT cantidad, devuelto, total, iva FROM ventas WHERE factura = ? AND articulo = 'Coca-Cola 1.5 L'",
+               (siguiente,))
+check(linea == (2, 1, 110.0, 14.35), "la línea queda con el neto y las unidades devueltas")
+check(valor("SELECT stock FROM articulos WHERE articulo = 'Coca-Cola 1.5 L'") == stock_coca_antes + 1,
+      "la unidad devuelta vuelve al inventario")
+check(valor("SELECT SUM(total) FROM ventas WHERE factura = ?", (siguiente,)) == round(total_factura_antes - 55, 2),
+      "el total de la factura baja")
+# Importante: no se anota una salida de caja, porque la venta ya quedó en neto.
+check(mod_caja.resumen(caja_id)["esperado"] == round(esperado_antes - 55, 2)
+      and valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?", (caja_id,)) == 0,
+      "la caja descuenta la devolución una sola vez, sin movimiento extra")
+
+# Devolver todo lo que queda deja la factura anulada.
+arbol.selection_set(arbol.get_children()[0])
+app.update()
+hist.devolver()
+dev = hist.devolucion
+for rowid, (_, _, _, _, cantidad, _, _) in zip(dev.cantidades, dev.lineas):
+    dev.cantidades[rowid].set(cantidad)
+dev.confirmar()
+check(q("SELECT DISTINCT estado FROM ventas WHERE factura = ?", (siguiente,)) == [("ANULADA",)]
+      and valor("SELECT COALESCE(SUM(total), 0) FROM ventas WHERE factura = ?", (siguiente,)) == 0,
+      "si se devuelve todo, la factura queda anulada y en cero")
+check(valor("SELECT stock FROM articulos WHERE articulo = 'Coca-Cola 1.5 L'") == stock_coca_antes + 3,
+      "vuelve al inventario todo lo devuelto")
+boton(h, "Limpiar").invoke()
 h.destroy()
 
 # ================= INVENTARIO =================
@@ -515,6 +583,7 @@ check(len(csv_inventario) == 1 and lineas[0].startswith("Código,Producto")
 cp = ct.frames[Compras]
 ct.show_frames(Compras)
 check(cp.combo_proveedor.get() in cp.proveedores and cp.proveedores, "proveedor por defecto")
+movimientos_previos = valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?", (caja_id,))
 stock_frijoles, _ = db.uno("SELECT stock, costo FROM articulos WHERE articulo = 'Frijoles rojos 1 lb'")
 codigo_frijoles = valor("SELECT codigo FROM articulos WHERE articulo = 'Frijoles rojos 1 lb'")
 cp.combo_producto.set(codigo_frijoles); cp.mostrar_producto()
@@ -526,7 +595,7 @@ cp.entry_cantidad.set(20); escribir(cp.entry_costo, "26"); cp.registrar()
 check(db.uno("SELECT stock, costo FROM articulos WHERE articulo = 'Frijoles rojos 1 lb'") == (stock_frijoles + 20, 26.0)
       and valor("SELECT COUNT(*) FROM compras WHERE articulo = 'Frijoles rojos 1 lb'") == 1,
       "compra suma stock y actualiza costo")
-check(valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?", (caja_id,)) == 0,
+check(valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?", (caja_id,)) == movimientos_previos,
       "una compra que no se paga de la caja no toca el efectivo")
 
 # Una compra pagada con el efectivo de la caja sí tiene que salir del arqueo.
@@ -539,8 +608,9 @@ cp.pagar_de_caja.set(True)
 cp.registrar()
 movimientos = q("SELECT tipo, monto, motivo FROM movimientos_caja WHERE caja_id = ?", (caja_id,))
 check(mod_caja.resumen(caja_id)["esperado"] == round(efectivo_antes - 130, 2)
-      and len(movimientos) == 1 and movimientos[0][0] == "SALIDA" and movimientos[0][1] == 130.0
-      and movimientos[0][2].startswith("Compra a "),
+      and len(movimientos) == movimientos_previos + 1 and movimientos[-1][0] == "SALIDA"
+      and movimientos[-1][1] == 130.0
+      and movimientos[-1][2].startswith("Compra a "),
       f"la compra pagada en efectivo sale de la caja (movimientos: {movimientos}, "
       f"mensaje: {cp.lbl_mensaje.cget('text')!r})")
 check(not cp.pagar_de_caja.get() and "descontaron" in cp.lbl_mensaje.cget("text"),
@@ -551,7 +621,8 @@ cp.entry_cantidad.set(9999); escribir(cp.entry_costo, "99")
 cp.pagar_de_caja.set(True)
 cp.registrar()
 check("suficiente efectivo" in cp.lbl_mensaje.cget("text")
-      and valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?", (caja_id,)) == 1,
+      and valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?",
+                (caja_id,)) == movimientos_previos + 1,
       "no se puede pagar de la caja más de lo que hay")
 cp.pagar_de_caja.set(False)
 

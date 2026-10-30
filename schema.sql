@@ -1,4 +1,4 @@
--- Minimarket v4: esquema de la base de datos (SQLite).
+-- Minimarket v5: esquema de la base de datos (SQLite).
 -- Las reglas de negocio viven en el propio esquema (UNIQUE, CHECK), así la base
 -- rechaza datos inválidos aunque el programa tuviera un error.
 
@@ -74,8 +74,9 @@ CREATE TABLE IF NOT EXISTS ventas (
     codigo       TEXT,
     articulo     TEXT NOT NULL,
     precio       REAL NOT NULL,
-    cantidad     INTEGER NOT NULL CHECK (cantidad > 0),
-    total        REAL NOT NULL,              -- IVA incluido
+    cantidad     INTEGER NOT NULL CHECK (cantidad >= 0),   -- queda en 0 si se devolvió todo
+    devuelto     INTEGER NOT NULL DEFAULT 0 CHECK (devuelto >= 0),  -- unidades devueltas
+    total        REAL NOT NULL,              -- IVA incluido, ya descontadas las devoluciones
     iva          REAL NOT NULL DEFAULT 0,    -- parte del total que es IVA
     costo        REAL NOT NULL,              -- costo del momento x cantidad
     fecha        TEXT NOT NULL,              -- AAAA-MM-DD
@@ -123,4 +124,4 @@ CREATE TABLE IF NOT EXISTS compras (
     usuario    TEXT
 );
 
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;

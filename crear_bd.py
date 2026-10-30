@@ -18,7 +18,7 @@ from db import DB_NAME
 from seguridad import hash_password
 from utilidades import calcular_linea, codigo_interno
 
-VERSION_ESQUEMA = 4
+VERSION_ESQUEMA = 5
 
 # (nombre, precio, costo, stock, stock mínimo, IVA %, estado, foto)
 # Precios al público en córdobas, IVA incluido. Los productos de la canasta
@@ -225,9 +225,47 @@ def _migrar_a_v4(conn):
     conn.execute("ALTER TABLE articulos_nuevo RENAME TO articulos")
 
 
+def _migrar_a_v5(conn):
+    """Devoluciones parciales.
+
+    Se agrega `ventas.devuelto` y se afloja el CHECK de `cantidad`, que exigía
+    más de cero: una línea devuelta por completo queda en cero. Como SQLite no
+    sabe modificar un CHECK, la tabla se reconstruye."""
+    if "devuelto" not in _columnas(conn, "ventas"):
+        conn.execute("ALTER TABLE ventas ADD COLUMN devuelto INTEGER NOT NULL DEFAULT 0 CHECK (devuelto >= 0)")
+    definicion = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'ventas'").fetchone()
+    if not definicion or "cantidad > 0" not in definicion[0]:
+        return
+    columnas = ("factura, cliente, codigo, articulo, precio, cantidad, devuelto, total, iva, costo, fecha, hora, "
+                "usuario, caja_id, metodo_pago, recibido, estado")
+    conn.execute("""
+        CREATE TABLE ventas_nueva (
+            factura      INTEGER NOT NULL,
+            cliente      TEXT NOT NULL,
+            codigo       TEXT,
+            articulo     TEXT NOT NULL,
+            precio       REAL NOT NULL,
+            cantidad     INTEGER NOT NULL CHECK (cantidad >= 0),
+            devuelto     INTEGER NOT NULL DEFAULT 0 CHECK (devuelto >= 0),
+            total        REAL NOT NULL,
+            iva          REAL NOT NULL DEFAULT 0,
+            costo        REAL NOT NULL,
+            fecha        TEXT NOT NULL,
+            hora         TEXT NOT NULL,
+            usuario      TEXT,
+            caja_id      INTEGER REFERENCES cajas (id),
+            metodo_pago  TEXT NOT NULL DEFAULT 'Efectivo' CHECK (metodo_pago IN ('Efectivo', 'Tarjeta')),
+            recibido     REAL,
+            estado       TEXT NOT NULL DEFAULT 'EMITIDA' CHECK (estado IN ('EMITIDA', 'ANULADA'))
+        )""")
+    conn.execute(f"INSERT INTO ventas_nueva ({columnas}) SELECT {columnas} FROM ventas")
+    conn.execute("DROP TABLE ventas")
+    conn.execute("ALTER TABLE ventas_nueva RENAME TO ventas")
+
+
 def migrar(desde):
     """Lleva la base de su versión a la actual, paso por paso."""
-    pasos = {3: _migrar_a_v3, 4: _migrar_a_v4}
+    pasos = {3: _migrar_a_v3, 4: _migrar_a_v4, 5: _migrar_a_v5}
     conn = sqlite3.connect(DB_NAME)
     try:
         for version in range(desde + 1, VERSION_ESQUEMA + 1):

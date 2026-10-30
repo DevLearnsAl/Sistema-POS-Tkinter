@@ -429,7 +429,7 @@ class Ventas(tk.Frame):
         return numero, t["total"], recibido, cambio, metodo, ruta
 
     def ver_ventas_realizadas(self):
-        HistorialVentas(self)
+        self.historial = HistorialVentas(self)
 
 
 class VentanaCobro:
@@ -572,7 +572,7 @@ class HistorialVentas:
 
     def __init__(self, ventas):
         self.ventas = ventas
-        top = self.top = ventana_modal(ventas, "Ventas realizadas", 1040, 600, bg=FONDO)
+        top = self.top = ventana_modal(ventas, "Ventas realizadas", 1040, 690, bg=FONDO)
         etiqueta(top, "Ventas realizadas", F_TITULO, TEXTO, bg=FONDO).place(x=24, y=16)
 
         p = panel(top)
@@ -604,22 +604,54 @@ class HistorialVentas:
                     ("pago", "Pago", 90, "center"), ("cajero", "Cajero", 100, "center"),
                     ("estado", "Estado", 110, "center")]
         marco, self.tree = tabla(top, columnas)
-        marco.place(x=24, y=150, width=992, height=356)
+        marco.place(x=24, y=150, width=992, height=270)
         self.tree.bind("<Double-1>", lambda e: self.ver_factura())
+        self.tree.bind("<<TreeviewSelect>>", lambda e: self.mostrar_detalle())
+
+        # Detalle de la factura elegida: antes había que abrir el PDF para verlo.
+        self.lbl_detalle = etiqueta(top, "Detalle de la factura", F_NEGRITA, TEXTO, bg=FONDO)
+        self.lbl_detalle.place(x=24, y=432)
+        columnas_detalle = [("codigo", "Código", 130, "center"), ("producto", "Producto", 300, "w"),
+                            ("precio", "Precio", 100, "e"), ("cant", "Cant.", 70, "center"),
+                            ("devuelto", "Devueltos", 90, "center"), ("iva", ajustes.nombre_impuesto(), 100, "e"),
+                            ("total", "Total", 110, "e")]
+        marco_detalle, self.tree_detalle = tabla(top, columnas_detalle, estilo="Compacta.Treeview")
+        marco_detalle.place(x=24, y=458, width=992, height=140)
 
         self.lbl_resumen = etiqueta(top, "", F_NEGRITA, TEXTO, bg=FONDO)
-        self.lbl_resumen.place(x=24, y=528)
-        boton(top, "Ver factura", self.ver_factura).place(x=592, y=520, width=130, height=42)
+        self.lbl_resumen.place(x=24, y=618)
+        boton(top, "Ver factura", self.ver_factura).place(x=452, y=610, width=130, height=42)
+        self.btn_devolver = boton(top, "Devolver productos", self.devolver, "secundario")
+        self.btn_devolver.place(x=592, y=610, width=170, height=42)
         self.btn_anular = boton(top, "Anular factura", self.anular, "peligro")
-        self.btn_anular.place(x=732, y=520, width=150, height=42)
+        self.btn_anular.place(x=772, y=610, width=140, height=42)
         if not ventas.controlador.puede("anular"):
-            # Anular devuelve mercadería y plata: queda para el administrador.
+            # Anular y devolver mueven mercadería y plata: quedan para el administrador.
             self.btn_anular.config(state="disabled")
-            etiqueta(top, "Anular facturas requiere un administrador.", F_PEQUE, TEXTO_SUAVE, bg=FONDO).place(
-                x=592, y=568)
-        boton(top, "Cerrar", top.destroy, "secundario").place(x=892, y=520, width=124, height=42)
+            self.btn_devolver.config(state="disabled")
+            etiqueta(top, "Anular y devolver requiere un administrador.", F_PEQUE, TEXTO_SUAVE, bg=FONDO).place(
+                x=452, y=658)
+        boton(top, "Cerrar", top.destroy, "secundario").place(x=922, y=610, width=94, height=42)
         top.bind("<Escape>", lambda e: top.destroy())
         self.buscar()
+
+    def mostrar_detalle(self):
+        """Llena la tabla de abajo con las líneas de la factura seleccionada."""
+        seleccion = self.tree.selection()
+        if not seleccion:
+            llenar_tabla(self.tree_detalle, [])
+            self.lbl_detalle.config(text="Detalle de la factura")
+            return
+        numero = int(str(self.tree.item(seleccion[0], "values")[0]))
+        filas = db.consultar("SELECT codigo, articulo, precio, cantidad, devuelto, iva, total FROM ventas "
+                             "WHERE factura = ? ORDER BY rowid", (numero,))
+        llenar_tabla(self.tree_detalle,
+                     [(f[0] or "—", f[1], moneda(f[2]), f[3], f[4] or "", moneda(f[5]), moneda(f[6])) for f in filas],
+                     lambda fila: ["alerta"] if fila[4] else [])
+        devueltos = sum(f[4] for f in filas)
+        self.lbl_detalle.config(text=f"Detalle de la factura N° {numero:06d}"
+                                     + (f"  ·  {devueltos} unidad{'es' if devueltos != 1 else ''} devuelta"
+                                        f"{'s' if devueltos != 1 else ''}" if devueltos else ""))
 
     def limpiar(self):
         self.entry_factura.delete(0, "end")
@@ -718,3 +750,178 @@ class HistorialVentas:
                                                "inventario.", parent=self.top)
         self.buscar()
         self.ventas.cargar_productos()
+
+    def devolver(self):
+        if not self.ventas.controlador.puede("anular"):
+            messagebox.showwarning("Ventas realizadas", "Solo un administrador puede registrar devoluciones.",
+                                   parent=self.top)
+            return
+        numero, estado = self._seleccion()
+        if numero is None:
+            return
+        if estado == "Anulada":
+            messagebox.showinfo("Ventas realizadas", "Esa factura está anulada: ya se devolvió completa.",
+                                parent=self.top)
+            return
+        lineas = db.consultar("SELECT rowid, articulo, codigo, precio, cantidad, iva, costo FROM ventas "
+                              "WHERE factura = ? AND cantidad > 0 ORDER BY rowid", (numero,))
+        if not lineas:
+            messagebox.showinfo("Ventas realizadas", "Esta factura ya no tiene productos para devolver.",
+                                parent=self.top)
+            return
+        self.devolucion = VentanaDevolucion(self, numero, lineas)
+
+
+class VentanaDevolucion:
+    """Devolver algunos productos de una factura, sin anularla entera.
+
+    De cada línea se descuentan las unidades devueltas y se recalculan su total
+    y su impuesto, así los reportes reflejan la venta neta sin tocar las
+    consultas. Las unidades vuelven al inventario.
+
+    La devolución NO registra un movimiento de caja, y es a propósito: el arqueo
+    suma las ventas en efectivo, que ya quedaron recalculadas al neto. Anotar
+    además una salida descontaría el mismo dinero dos veces. Es la misma lógica
+    con la que funciona anular una factura."""
+
+    def __init__(self, historial, numero, lineas):
+        self.historial = historial
+        self.numero = numero
+        self.lineas = lineas
+        self.cantidades = {}
+
+        # 250 px fijos entre el encabezado y los botones; el resto es la lista.
+        alto = 250 + min(len(lineas) * 48, 288)
+        top = self.top = ventana_modal(historial.top, f"Devolver productos · Factura {numero:06d}", 620, alto)
+        etiqueta(top, "Devolver productos", F_TITULO, TEXTO).place(x=28, y=20)
+        etiqueta(top, f"Factura N° {numero:06d}. Escriba cuántas unidades devuelve de cada producto.",
+                 F_PEQUE, TEXTO_SUAVE, wraplength=564, justify="left").place(x=28, y=60)
+
+        marco = tk.Frame(top, bg=BLANCO)
+        marco.place(x=28, y=92, width=564, height=alto - 250)
+        lienzo = tk.Canvas(marco, bg=BLANCO, highlightthickness=0)
+        barra = ttk.Scrollbar(marco, orient="vertical", command=lienzo.yview)
+        interior = tk.Frame(lienzo, bg=BLANCO)
+        interior.bind("<Configure>", lambda e: lienzo.configure(scrollregion=lienzo.bbox("all")))
+        # El ancho del marco interior se fija a mano: si se deja que lo calcule
+        # su contenido, las filas quedan de un píxel y la lista se ve vacía
+        # aunque los datos estén. El <Configure> lo ajusta si la ventana cambia.
+        ventana = lienzo.create_window((0, 0), window=interior, anchor="nw", width=544)
+        lienzo.bind("<Configure>", lambda e: lienzo.itemconfigure(ventana, width=e.width))
+        lienzo.configure(yscrollcommand=barra.set)
+        barra.pack(side="right", fill="y")
+        lienzo.pack(side="left", fill="both", expand=True)
+
+        for i, (rowid, articulo, _, precio, cantidad, _, _) in enumerate(lineas):
+            fila = tk.Frame(interior, bg=BLANCO)
+            fila.pack(fill="x", pady=3)
+            etiqueta(fila, articulo, F_NORMAL, TEXTO, wraplength=300, justify="left", anchor="w").place(
+                x=0, y=4, width=300, height=34)
+            etiqueta(fila, f"{cantidad} × {moneda(precio)}", F_PEQUE, TEXTO_SUAVE, anchor="e").place(
+                x=306, y=10, width=130)
+            spin = ttk.Spinbox(fila, from_=0, to=cantidad, font=F_NORMAL, width=5)
+            spin.set(0)
+            spin.place(x=448, y=4, width=78, height=34)
+            spin.bind("<KeyRelease>", lambda e: self.actualizar_total())
+            spin.bind("<<Increment>>", lambda e: self.top.after(1, self.actualizar_total))
+            spin.bind("<<Decrement>>", lambda e: self.top.after(1, self.actualizar_total))
+            fila.configure(height=42)
+            fila.pack_propagate(False)
+            self.cantidades[rowid] = spin
+
+        y = alto - 148
+        tk.Frame(top, bg=BORDE).place(x=28, y=y, width=564, height=1)
+        etiqueta(top, "Total a devolver", F_NORMAL, TEXTO_SUAVE).place(x=28, y=y + 12)
+        self.lbl_total = etiqueta(top, moneda(0), F_SUBTITULO, NAVY)
+        self.lbl_total.place(x=592, y=y + 10, anchor="ne")
+        self.lbl_caja = etiqueta(top, "", F_PEQUE, TEXTO_SUAVE, wraplength=564, justify="left", anchor="w")
+        self.lbl_caja.place(x=28, y=y + 44, width=564)
+        self.lbl_error = etiqueta(top, "", F_PEQUE, ROJO, wraplength=564, justify="left", anchor="w")
+        self.lbl_error.place(x=28, y=y + 66, width=564)
+
+        boton(top, "Cancelar", top.destroy, "secundario").place(x=28, y=alto - 60, width=150, height=44)
+        boton(top, "Registrar devolución", self.confirmar, "peligro", (FUENTE, 12, "bold")).place(
+            x=350, y=alto - 60, width=242, height=44)
+        top.bind("<Escape>", lambda e: top.destroy())
+        self.actualizar_total()
+
+    def _elegidas(self):
+        """Lo que se devuelve de cada línea: {rowid: unidades}."""
+        elegidas = {}
+        for (rowid, _, _, _, cantidad, _, _) in self.lineas:
+            texto = self.cantidades[rowid].get().strip()
+            if not texto.isdigit():
+                return None
+            unidades = int(texto)
+            if unidades > cantidad:
+                return None
+            if unidades:
+                elegidas[rowid] = unidades
+        return elegidas
+
+    def total_devolucion(self, elegidas):
+        precios = {l[0]: l[3] for l in self.lineas}
+        return round(sum(precios[rowid] * unidades for rowid, unidades in elegidas.items()), 2)
+
+    def actualizar_total(self):
+        elegidas = self._elegidas()
+        if elegidas is None:
+            self.lbl_total.config(text="—")
+            return
+        total = self.total_devolucion(elegidas)
+        self.lbl_total.config(text=moneda(total))
+        self.lbl_caja.config(text="Se devuelve por el mismo medio con que se pagó. El arqueo de caja "
+                                  "lo descuenta solo." if total else "")
+
+    def confirmar(self):
+        elegidas = self._elegidas()
+        if elegidas is None:
+            self.lbl_error.config(text="Las cantidades deben ser números enteros, y no pueden superar lo vendido.")
+            return
+        if not elegidas:
+            self.lbl_error.config(text="Elija al menos una unidad para devolver.")
+            return
+        total = self.total_devolucion(elegidas)
+        if not messagebox.askyesno("Devolver productos",
+                                   f"¿Devolver {sum(elegidas.values())} unidad(es) por {moneda(total)}?\n\n"
+                                   "Las unidades vuelven al inventario y la factura queda con el monto neto.",
+                                   parent=self.top):
+            return
+
+        try:
+            with db.conectar() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                for rowid, unidades in elegidas.items():
+                    fila = conn.execute("SELECT articulo, codigo, precio, cantidad, devuelto, costo FROM ventas "
+                                        "WHERE rowid = ?", (rowid,)).fetchone()
+                    articulo, codigo, precio, cantidad, devuelto, costo = fila
+                    if unidades > cantidad:
+                        raise ValueError(f"«{articulo}» ya no tiene esas unidades para devolver.")
+                    quedan = cantidad - unidades
+                    # El impuesto y el costo se recalculan proporcionalmente, así la
+                    # línea sigue cuadrando con lo que realmente se vendió.
+                    tasa = conn.execute("SELECT iva FROM articulos WHERE articulo = ?", (articulo,)).fetchone()
+                    nuevo_total, nuevo_iva = calcular_linea(precio, quedan, tasa[0] if tasa else 0)
+                    nuevo_costo = round(costo / cantidad * quedan, 2) if cantidad else 0
+                    conn.execute("UPDATE ventas SET cantidad = ?, devuelto = ?, total = ?, iva = ?, costo = ? "
+                                 "WHERE rowid = ?",
+                                 (quedan, devuelto + unidades, nuevo_total, nuevo_iva, nuevo_costo, rowid))
+                    conn.execute("UPDATE articulos SET stock = stock + ? "
+                                 "WHERE (codigo = ? AND codigo <> '') OR articulo = ?",
+                                 (unidades, codigo or "", articulo))
+                # Si no queda nada vendido, la factura entera pasa a anulada.
+                queda = conn.execute("SELECT COALESCE(SUM(cantidad), 0) FROM ventas WHERE factura = ?",
+                                     (self.numero,)).fetchone()[0]
+                if queda == 0:
+                    conn.execute("UPDATE ventas SET estado = 'ANULADA' WHERE factura = ?", (self.numero,))
+        except (sqlite3.Error, ValueError) as e:
+            self.lbl_error.config(text=f"No se pudo registrar la devolución: {e}")
+            return
+
+        self.top.destroy()
+        messagebox.showinfo("Devolución registrada",
+                            f"Se devolvieron {sum(elegidas.values())} unidad(es) por {moneda(total)}."
+                            + ("" if queda else "\n\nNo quedó nada vendido: la factura pasó a anulada."),
+                            parent=self.historial.top)
+        self.historial.buscar()
+        self.historial.ventas.cargar_productos()

@@ -28,14 +28,14 @@ LIMITE_INFERIOR = 190          # espacio reservado para totales y pie en la últ
 def datos_desde_bd(numero):
     filas = db.consultar(
         "SELECT codigo, articulo, precio, cantidad, total, iva, cliente, fecha, hora, usuario, metodo_pago, "
-        "recibido, estado FROM ventas WHERE factura = ? ORDER BY rowid", (numero,))
+        "recibido, estado, devuelto FROM ventas WHERE factura = ? ORDER BY rowid", (numero,))
     if not filas:
         raise ValueError(f"No existe la factura {numero}")
     f = filas[0]
     return {"numero": numero, "cliente": f[6], "fecha": f[7], "hora": f[8], "usuario": f[9], "metodo": f[10],
             "recibido": f[11], "estado": f[12],
             "lineas": [{"codigo": r[0] or "", "articulo": r[1], "precio": r[2], "cantidad": r[3], "total": r[4],
-                        "iva": r[5]} for r in filas]}
+                        "iva": r[5], "devuelto": r[13]} for r in filas]}
 
 
 def _logo(ruta, alto):
@@ -172,7 +172,9 @@ def generar_pdf(d):
             c.setFillColor(FILA)
             c.rect(M, y - 20, ANCHO - 2 * M, 20, stroke=0, fill=1)
         c.setFillColor(TEXTO)
-        valores = [l["codigo"], _recortar(c, l["articulo"], 200), str(l["cantidad"]), f"{l['precio']:,.2f}",
+        # Si hubo devolución, la línea muestra el neto y se aclara cuánto volvió.
+        descripcion = l["articulo"] + (f"  (devueltos {l['devuelto']})" if l.get("devuelto") else "")
+        valores = [l["codigo"], _recortar(c, descripcion, 200), str(l["cantidad"]), f"{l['precio']:,.2f}",
                    f"{l['iva']:,.2f}" if l["iva"] else "Exento", f"{l['total']:,.2f}"]
         for (_, x, alin), valor in zip(COLUMNAS, valores):
             (c.drawRightString if alin == "r" else c.drawString)(x, y - 14, valor)
