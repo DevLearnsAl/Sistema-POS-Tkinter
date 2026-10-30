@@ -4,14 +4,13 @@ Las dos pantallas son ventanas emergentes que se abren desde la barra superior.
 Cambiar la contraseña lo puede hacer cualquiera; crear usuarios, cambiar roles y
 desactivar cuentas, solo un administrador.
 """
+import re
 import sqlite3
-import tkinter as tk
 from tkinter import messagebox
 
 import db
-from estilos import (BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, ROJO, FUENTE, F_PEQUE, F_NORMAL, F_NEGRITA,
-                     F_SUBTITULO, F_TITULO, boton, panel, etiqueta, campo, lista, tabla, llenar_tabla,
-                     ventana_modal)
+from estilos import (TEXTO, TEXTO_SUAVE, VERDE, ROJO, FUENTE, F_PEQUE, F_NEGRITA, F_SUBTITULO,
+                     F_TITULO, boton, etiqueta, campo, lista, tabla, llenar_tabla, ventana_modal)
 from seguridad import hash_password, verificar_password
 
 LARGO_MINIMO = 6
@@ -75,7 +74,7 @@ class VentanaMiCuenta:
         except sqlite3.Error as e:
             self.lbl_mensaje.config(text=f"No se pudo guardar: {e}")
             return
-        self.controlador.clave_por_defecto = False
+        self.controlador.clave_insegura = False
         self.top.destroy()
         messagebox.showinfo("Mi cuenta", "Contraseña cambiada.", parent=self.controlador)
 
@@ -141,14 +140,17 @@ class VentanaUsuarios:
             return
         usuario, rol, _ = fila
         nuevo = "cajero" if rol == "admin" else "admin"
+        # Cambiarse el rol a uno mismo dejaría la pantalla mostrando módulos que
+        # ya no corresponden, así que se pide hacerlo desde otra cuenta.
+        if usuario == self.controlador.usuario_actual:
+            self.aviso("No puede cambiarse el rol a usted mismo.", error=True)
+            return
         if rol == "admin" and not self._otros_admins(usuario):
             self.aviso("No puede quitarle el rol: es el único administrador activo.", error=True)
             return
         if not messagebox.askyesno("Cambiar rol", f"¿«{usuario}» pasa a ser {nuevo}?", parent=self.top):
             return
         db.ejecutar("UPDATE usuarios SET rol = ? WHERE username = ?", (nuevo, usuario))
-        if usuario == self.controlador.usuario_actual:
-            self.controlador.rol_actual = nuevo
         self.cargar()
         self.aviso(f"«{usuario}» ahora es {nuevo}. El cambio se aplica la próxima vez que inicie sesión.")
 
@@ -228,6 +230,13 @@ class FormularioUsuario:
                 nombre = self.entry_usuario.get().strip()
                 if len(nombre) < 3:
                     self.lbl_error.config(text="El usuario debe tener al menos 3 caracteres.")
+                    return
+                if not re.fullmatch(r"[A-Za-z0-9._-]+", nombre):
+                    self.lbl_error.config(text="El usuario solo puede tener letras, números, punto, guion y "
+                                               "guion bajo, sin espacios.")
+                    return
+                if db.uno("SELECT 1 FROM usuarios WHERE LOWER(username) = LOWER(?)", (nombre,)):
+                    self.lbl_error.config(text="Ya existe un usuario con ese nombre.")
                     return
                 rol = "admin" if self.combo_rol.get() == "Administrador" else "cajero"
                 db.ejecutar("INSERT INTO usuarios (username, password, rol) VALUES (?, ?, ?)",

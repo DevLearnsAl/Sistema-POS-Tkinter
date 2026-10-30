@@ -382,12 +382,18 @@ class VentanaCerrarCaja:
             return
         ahora = datetime.datetime.now()
         try:
-            db.ejecutar("UPDATE cajas SET fecha_cierre = ?, hora_cierre = ?, usuario_cierre = ?, esperado = ?, "
-                        "monto_contado = ?, diferencia = ?, observacion = ?, estado = 'CERRADA' "
-                        "WHERE id = ? AND estado = 'ABIERTA'",
-                        (ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M:%S"),
-                         self.caja.controlador.usuario_actual, self.datos["esperado"], contado, diferencia,
-                         self.entry_obs.get().strip() or None, self.caja.caja_id))
+            with db.conectar() as conn:
+                cur = conn.execute(
+                    "UPDATE cajas SET fecha_cierre = ?, hora_cierre = ?, usuario_cierre = ?, esperado = ?, "
+                    "monto_contado = ?, diferencia = ?, observacion = ?, estado = 'CERRADA' "
+                    "WHERE id = ? AND estado = 'ABIERTA'",
+                    (ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M:%S"),
+                     self.caja.controlador.usuario_actual, self.datos["esperado"], contado, diferencia,
+                     self.entry_obs.get().strip() or None, self.caja.caja_id))
+                # Si no actualizó ninguna fila, el turno ya estaba cerrado.
+                if cur.rowcount == 0:
+                    self.lbl_error.config(text="Ese turno ya está cerrado. Actualizá la pantalla.")
+                    return
         except sqlite3.Error as e:
             self.lbl_error.config(text=f"No se pudo cerrar la caja: {e}")
             return

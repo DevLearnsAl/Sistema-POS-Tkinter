@@ -229,7 +229,14 @@ class Ventas(tk.Frame):
             return
         nombre = self.buscar_producto(texto)
         if not nombre:
-            self.aviso(f"No se encontró ningún producto activo con «{texto.strip()}».")
+            # Si hay varias coincidencias no se adivina cuál: se dice cuántas son.
+            # Antes decía «no se encontró», que era falso y confundía.
+            parecidos = [n for n in self.nombres if texto.strip().lower() in n.lower()]
+            if len(parecidos) > 1:
+                self.aviso(f"Hay {len(parecidos)} productos que coinciden con «{texto.strip()}». "
+                           "Elija uno de la lista.")
+            else:
+                self.aviso(f"No se encontró ningún producto activo con «{texto.strip()}».")
             return
         cantidad_texto = self.entry_cantidad.get().strip()
         if not cantidad_texto.isdigit() or int(cantidad_texto) <= 0:

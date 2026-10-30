@@ -16,7 +16,8 @@ impuesto y los textos de la factura se configuran desde el propio programa.
 ## Funciones
 
 - **Inicio de sesión y roles.** Contraseñas guardadas con hash (PBKDF2). Cada usuario es
-  **cajero** o **administrador**, y el sistema le muestra solo lo que le toca.
+  **cajero** o **administrador**, y el sistema le muestra solo lo que le toca. **No hay
+  registro público**: las cuentas las crea un administrador.
 - **Ventas.** El producto se agrega escribiendo o escaneando su **código de barras**, o
   buscándolo por nombre. El carrito no deja vender más de lo que hay en stock. Muestra
   subtotal, **IVA 15 %** (los productos de la canasta básica son exentos) y total.
@@ -28,7 +29,8 @@ impuesto y los textos de la factura se configuran desde el propio programa.
 - **Ventas realizadas.** Historial por factura con filtros (número, cliente, período y
   estado), reimpresión y **anulación** de facturas: la factura no se borra, queda anulada
   y el stock vuelve al inventario.
-- **Compras.** Entrada de mercadería por proveedor: suma el stock y actualiza el costo.
+- **Compras.** Entrada de mercadería por proveedor: suma el stock y actualiza el costo. Si
+  se paga con el efectivo de la caja, queda registrada como salida del turno.
 - **Inventario.** Tarjetas con foto y estado del stock (normal, bajo, agotado, inactivo),
   búsqueda por nombre o código, filtros, detalle con margen de ganancia, formulario para
   crear o editar productos (con generador de códigos internos EAN-13) y exportación a CSV.
@@ -40,8 +42,8 @@ impuesto y los textos de la factura se configuran desde el propio programa.
 - **Usuarios.** El administrador crea cuentas, cambia roles, desactiva usuarios y
   restablece contraseñas. Cualquiera puede cambiar la suya desde «Mi cuenta».
 - **Configuración.** Nombre y datos del negocio, logo, símbolo y decimales de la moneda,
-  denominaciones del cobro rápido, nombre y tasa del impuesto, textos de la factura y código
-  de registro. Todo se guarda en la base de datos, no en el código.
+  denominaciones del cobro rápido, nombre y tasa del impuesto y los textos de la factura.
+  Todo se guarda en la base de datos, no en el código.
 
 ### Qué puede hacer cada rol
 
@@ -76,7 +78,9 @@ py index.py
 Datos de acceso:
 
 - Usuario: `admin` · Contraseña: `admin` (el sistema avisa mientras siga siendo esa)
-- Código para registrar usuarios nuevos: `1234` (se cambia en Configuración)
+
+Las demás cuentas se crean desde **Usuarios**, en el menú de arriba a la derecha. No hay
+pantalla de registro: en un punto de venta, quién puede cobrar no lo decide cada quien.
 
 La primera vez, el programa crea `database.db` con datos de ejemplo: 11 productos, 4
 clientes, 3 proveedores, una semana de ventas y sus 7 arqueos de caja. **Para vender hay
@@ -95,10 +99,11 @@ py tests/prueba_completa.py
 ```
 
 Maneja la interfaz como un usuario sobre una copia temporal del proyecto (no toca tu
-base de datos) y comprueba 165 casos: migraciones, login y roles, permisos del cajero,
-apertura y cierre de caja con su arqueo, ventas con código de barras e impuesto, cobro en
-efectivo y tarjeta, stock insuficiente, anulación, inventario, compras, clientes,
-proveedores, usuarios, reportes, configuración del negocio y registro de errores.
+base de datos) y comprueba 175 casos: migraciones, login y roles, permisos del cajero,
+creación de usuarios, apertura y cierre de caja con su arqueo, ventas con código de barras e
+impuesto, cobro en efectivo y tarjeta, stock insuficiente, anulación, inventario, compras
+pagadas de la caja, clientes, proveedores, reportes, configuración del negocio y registro de
+errores.
 
 ## Cómo funciona
 
@@ -129,7 +134,7 @@ Las facturas anuladas no suman, porque ese dinero se devolvió.
 | `index.py` | Punto de entrada: prepara la base de datos y abre la aplicación |
 | `manager.py` | Ventana principal; cambia entre el inicio de sesión y el sistema; guarda el rol |
 | `container.py` | Barra superior con los módulos según el rol, atajos, usuario y hora |
-| `login.py` | Inicio de sesión y registro |
+| `login.py` | Inicio de sesión |
 | `ventas.py` | Carrito, cobro, venta registrada, historial y anulación |
 | `caja.py` | Turnos de caja, movimientos de efectivo y cierre con arqueo |
 | `factura.py` | Factura en PDF (varias páginas y sello de anulada) |

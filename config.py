@@ -5,7 +5,7 @@ Acá va lo que es igual en toda instalación. Lo que cambia de un negocio a otro
 base de datos y se edita desde la pantalla de Configuración: ver `ajustes.py`.
 """
 
-VERSION = "4.0"
+VERSION = "4.1"
 
 # Carpetas que el programa crea junto a database.db.
 CARPETA_RESPALDOS = "respaldos"

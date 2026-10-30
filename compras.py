@@ -5,8 +5,10 @@ import tkinter as tk
 from tkinter import ttk
 
 import ajustes
+import caja
 import db
-from estilos import (FONDO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, ROJO, F_PEQUE, F_NORMAL, F_SUBTITULO, F_CAMPO,
+from estilos import (FONDO, BLANCO, BORDE, NAVY, TEXTO_SUAVE, VERDE, ROJO, F_PEQUE, F_NORMAL, F_SUBTITULO,
+                     F_CAMPO,
                      moneda, boton, panel, etiqueta, campo, lista, tabla, llenar_tabla)
 from utilidades import buscar_producto, fecha_corta
 
@@ -53,9 +55,17 @@ class Compras(tk.Frame):
         self.lbl_total_compra = etiqueta(f, moneda(0), F_SUBTITULO, NAVY)
         self.lbl_total_compra.place(x=402, y=304, anchor="ne")
 
-        boton(f, "Registrar entrada", self.registrar, "exito").place(x=16, y=348, width=386, height=46)
+        # Si la compra se paga con el efectivo de la caja, el arqueo tiene que
+        # enterarse: si no, al cerrar el turno faltaría ese dinero sin explicación.
+        self.pagar_de_caja = tk.BooleanVar(value=False)
+        self.chk_caja = tk.Checkbutton(f, text="", variable=self.pagar_de_caja, font=F_PEQUE, bg=BLANCO,
+                                       fg=TEXTO_SUAVE, activebackground=BLANCO, highlightthickness=0, anchor="w",
+                                       wraplength=366, justify="left")
+        self.chk_caja.place(x=13, y=332, width=390, height=40)
+
+        boton(f, "Registrar entrada", self.registrar, "exito").place(x=16, y=380, width=386, height=46)
         self.lbl_mensaje = etiqueta(f, "", F_PEQUE, VERDE, wraplength=386, justify="left")
-        self.lbl_mensaje.place(x=16, y=406)
+        self.lbl_mensaje.place(x=16, y=438)
         etiqueta(f, "Al registrar la entrada, la cantidad se suma al stock y el costo del producto se actualiza "
                     "con el de esta compra.", F_PEQUE, TEXTO_SUAVE, wraplength=386, justify="left").place(x=16, y=500)
 
@@ -79,7 +89,19 @@ class Compras(tk.Frame):
         self.nombres = [f[0] for f in filas]
         self.por_codigo = {f[1]: f[0] for f in filas if f[1]}
         self.combo_producto["values"] = self.nombres
+        self.actualizar_caja()
         self.cargar_compras()
+
+    def actualizar_caja(self):
+        """Solo se puede pagar de la caja si hay un turno abierto."""
+        turno = caja.caja_abierta()
+        if turno:
+            disponible = caja.resumen(turno[0])["esperado"]
+            self.chk_caja.config(text=f"Pagada con el efectivo de la caja (hay {moneda(disponible)})",
+                                 state="normal")
+        else:
+            self.pagar_de_caja.set(False)
+            self.chk_caja.config(text="Pagada con el efectivo de la caja (no hay turno abierto)", state="disabled")
 
     def cargar_compras(self):
         filas = db.consultar("SELECT fecha, proveedor, articulo, cantidad, costo, total FROM compras "
@@ -129,20 +151,45 @@ class Compras(tk.Frame):
             self.lbl_mensaje.config(text="La cantidad debe ser un entero mayor que 0 y el costo un número válido.",
                                     fg=ROJO)
             return
+        total = round(cantidad * costo, 2)
+        turno = caja.caja_abierta() if self.pagar_de_caja.get() else None
+        if self.pagar_de_caja.get():
+            if not turno:
+                self.lbl_mensaje.config(text="No hay un turno de caja abierto para pagar la compra.", fg=ROJO)
+                self.actualizar_caja()
+                return
+            if total > caja.resumen(turno[0])["esperado"]:
+                self.lbl_mensaje.config(text="No hay suficiente efectivo en la caja para pagar esta compra.",
+                                        fg=ROJO)
+                return
+
         ahora = datetime.datetime.now()
+        fecha, hora = ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M:%S")
         try:
+            # La compra, el stock y la salida de caja van juntos: o se guarda todo
+            # o no se guarda nada.
             with db.conectar() as conn:
                 conn.execute("INSERT INTO compras (fecha, hora, proveedor, articulo, cantidad, costo, total, usuario) "
                              "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                             (ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M:%S"), proveedor, nombre, cantidad,
-                              costo, round(cantidad * costo, 2), self.controlador.usuario_actual))
+                             (fecha, hora, proveedor, nombre, cantidad, costo, total,
+                              self.controlador.usuario_actual))
                 conn.execute("UPDATE articulos SET stock = stock + ?, costo = ? WHERE articulo = ?",
                              (cantidad, costo, nombre))
+                if turno:
+                    conn.execute("INSERT INTO movimientos_caja (caja_id, tipo, monto, motivo, fecha, hora, usuario) "
+                                 "VALUES (?, 'SALIDA', ?, ?, ?, ?, ?)",
+                                 (turno[0], total, f"Compra a {proveedor}", fecha, hora,
+                                  self.controlador.usuario_actual))
                 stock = conn.execute("SELECT stock FROM articulos WHERE articulo = ?", (nombre,)).fetchone()[0]
         except sqlite3.Error as e:
             self.lbl_mensaje.config(text=f"No se pudo registrar la entrada: {e}", fg=ROJO)
             return
-        self.lbl_mensaje.config(text=f"Entrada registrada: +{cantidad} de {nombre}. Stock actual: {stock}.", fg=VERDE)
+        aviso = f"Entrada registrada: +{cantidad} de {nombre}. Stock actual: {stock}."
+        if turno:
+            aviso += f" Se descontaron {moneda(total)} de la caja."
+        self.lbl_mensaje.config(text=aviso, fg=VERDE)
+        self.pagar_de_caja.set(False)
+        self.actualizar_caja()
         self.combo_producto.set("")
         self.entry_cantidad.set(1)
         self.entry_costo.delete(0, "end")

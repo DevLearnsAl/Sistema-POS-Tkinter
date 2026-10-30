@@ -16,7 +16,7 @@ from PIL import Image, ImageOps, ImageTk
 import ajustes
 import db
 import registro
-from estilos import (BLANCO, BORDE, CLARO, NAVY, TEXTO, TEXTO_SUAVE, VERDE, ROJO, FUENTE, F_PEQUE, F_NEGRITA,
+from estilos import (BLANCO, BORDE, CLARO, NAVY, TEXTO, TEXTO_SUAVE, ROJO, FUENTE, F_PEQUE,
                      F_SUBTITULO, F_TITULO, boton, etiqueta, campo, ventana_modal)
 
 CARPETA_LOGO = "imagenes"
@@ -28,7 +28,7 @@ class VentanaConfiguracion:
         self.controlador = controlador
         self.logo_nuevo = None
         self.quitar_logo = False
-        top = self.top = ventana_modal(padre, "Configuración", 860, 692)
+        top = self.top = ventana_modal(padre, "Configuración", 860, 634)
         etiqueta(top, "Configuración", F_TITULO, TEXTO).place(x=28, y=20)
         etiqueta(top, "Estos datos salen en la factura y en las pantallas. Son de este negocio, no del programa.",
                  F_PEQUE, TEXTO_SUAVE, wraplength=800, justify="left").place(x=28, y=58)
@@ -56,15 +56,14 @@ class VentanaConfiguracion:
                        font=F_PEQUE, bg=BLANCO, fg=TEXTO_SUAVE, activebackground=BLANCO, highlightthickness=0,
                        anchor="w").place(x=449, y=116 + ALTO_FILA * 4, width=390, height=24)
 
-        self._titulo("Factura y acceso", 452, 116 + ALTO_FILA * 4 + 32)
+        self._titulo("Factura", 452, 116 + ALTO_FILA * 4 + 32)
         self._campo("factura_despedida", "Despedida en la factura", 452, 116 + ALTO_FILA * 5 + 4, ancho=380)
         self._campo("factura_nota", "Nota al pie", 452, 116 + ALTO_FILA * 6 + 4, ancho=380)
-        self._campo("codigo_registro", "Código para registrar usuarios *", 452, 116 + ALTO_FILA * 7 + 4, ancho=380)
 
         self.lbl_mensaje = etiqueta(top, "", F_PEQUE, ROJO, wraplength=800, justify="left")
-        self.lbl_mensaje.place(x=28, y=596)
-        boton(top, "Cancelar", top.destroy, "secundario").place(x=560, y=628, width=130, height=44)
-        boton(top, "Guardar", self.guardar, "primario", (FUENTE, 12, "bold")).place(x=702, y=628, width=130, height=44)
+        self.lbl_mensaje.place(x=28, y=538)
+        boton(top, "Cancelar", top.destroy, "secundario").place(x=560, y=570, width=130, height=44)
+        boton(top, "Guardar", self.guardar, "primario", (FUENTE, 12, "bold")).place(x=702, y=570, width=130, height=44)
         top.bind("<Escape>", lambda e: top.destroy())
         self.cargar()
         self.e["negocio_nombre"].focus_set()
@@ -134,8 +133,6 @@ class VentanaConfiguracion:
             return self.error("El símbolo de la moneda es obligatorio y lleva 5 caracteres como máximo.")
         if not valores["impuesto_nombre"]:
             return self.error("El nombre del impuesto es obligatorio (por ejemplo IVA).")
-        if len(valores["codigo_registro"]) < 4:
-            return self.error("El código para registrar usuarios debe tener al menos 4 caracteres.")
         try:
             decimales = int(valores["moneda_decimales"])
             tasa = float(valores["impuesto_tasa"].replace(",", "."))

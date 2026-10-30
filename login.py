@@ -1,3 +1,9 @@
+"""Pantalla de inicio de sesión.
+
+No hay registro público: las cuentas las crea un administrador desde Usuarios
+(`usuarios.py`). En un punto de venta, quién puede cobrar no es algo que cada
+quien decida por su cuenta.
+"""
 import os
 import sqlite3
 import tkinter as tk
@@ -7,7 +13,7 @@ from PIL import Image, ImageOps, ImageTk
 import ajustes
 import config
 import db
-from seguridad import hash_password, verificar_password
+from seguridad import verificar_password
 from estilos import (BLANCO, NAVY, ROJO, VERDE, TEXTO, TEXTO_SUAVE, TEXTO_CLARO, FUENTE, F_NORMAL, F_PEQUE,
                      F_NEGRITA, boton, campo, etiqueta)
 
@@ -20,8 +26,8 @@ def dibujar_logo(canvas, cx, cy, r):
     canvas.create_text(cx, cy + r * 0.25, text="MARKET", fill=NAVY, font=(FUENTE, int(r * 0.24), "bold"))
 
 
-class PantallaAcceso(tk.Frame):
-    """Base de Login y Registro: panel de marca a la izquierda y formulario a la derecha."""
+class Login(tk.Frame):
+    """Panel de marca a la izquierda y formulario de acceso a la derecha."""
 
     def __init__(self, padre, controlador):
         super().__init__(padre, bg=BLANCO)
@@ -32,6 +38,7 @@ class PantallaAcceso(tk.Frame):
         self.dibujar_marca()
         self.widgets()
 
+    # ------------------------------------------------------------------ interfaz
     def dibujar_marca(self):
         """Panel de la izquierda. Se vuelve a dibujar al mostrarse, así el nombre
         y el logo cambian apenas se guarda la configuración."""
@@ -72,38 +79,27 @@ class PantallaAcceso(tk.Frame):
         entrada.bind("<Return>", lambda e: self.enviar())
         return entrada
 
-    def mensaje(self, y):
+    def widgets(self):
+        etiqueta(self, "Iniciar sesión", (FUENTE, 24, "bold"), TEXTO).place(x=610, y=170)
+        etiqueta(self, "Ingrese su usuario y contraseña para continuar.", F_NORMAL, TEXTO_SUAVE).place(x=610, y=216)
+        self.username = self.fila("Usuario", 270)
+        self.password = self.fila("Contraseña", 352, oculto=True)
         self.lbl_mensaje = etiqueta(self, "", F_PEQUE, ROJO, wraplength=320, justify="left")
-        self.lbl_mensaje.place(x=610, y=y)
+        self.lbl_mensaje.place(x=610, y=432)
+        self.btn_ingresar = boton(self, "Ingresar", self.enviar, "primario", (FUENTE, 12, "bold"))
+        self.btn_ingresar.place(x=610, y=470, width=320, height=44)
+        etiqueta(self, "¿No tiene cuenta? Las crea el administrador del sistema.", F_PEQUE, TEXTO_SUAVE,
+                 wraplength=320, justify="left").place(x=610, y=530)
 
     def mostrar_mensaje(self, texto, error=True):
         self.lbl_mensaje.config(text=texto, fg=ROJO if error else VERDE)
-
-    def enviar(self):
-        raise NotImplementedError
-
-
-class Login(PantallaAcceso):
-    def widgets(self):
-        etiqueta(self, "Iniciar sesión", (FUENTE, 24, "bold"), TEXTO).place(x=610, y=150)
-        etiqueta(self, "Ingrese su usuario y contraseña para continuar.", F_NORMAL, TEXTO_SUAVE).place(x=610, y=196)
-        self.username = self.fila("Usuario", 250)
-        self.password = self.fila("Contraseña", 332, oculto=True)
-        self.mensaje(412)
-        self.btn_ingresar = boton(self, "Ingresar", self.enviar, "primario", (FUENTE, 12, "bold"))
-        self.btn_ingresar.place(x=610, y=450, width=320, height=44)
-        etiqueta(self, "¿No tiene una cuenta?", F_NORMAL, TEXTO_SUAVE).place(x=610, y=515)
-        link = tk.Label(self, text="Crear una cuenta", font=(FUENTE, 11, "bold", "underline"), fg=NAVY, bg=BLANCO,
-                        cursor="hand2")
-        link.place(x=772, y=515)
-        link.bind("<Button-1>", lambda e: self.controlador.show_frame(Registro))
-        self.link_registro = link
 
     def al_mostrar(self):
         self.dibujar_marca()
         self.password.delete(0, "end")
         self.username.focus_set()
 
+    # ------------------------------------------------------------------ acceso
     def enviar(self):
         user = self.username.get().strip()
         pas = self.password.get()
@@ -123,62 +119,14 @@ class Login(PantallaAcceso):
             self.mostrar_mensaje("")
             self.username.delete(0, "end")
             self.password.delete(0, "end")
-            # Avisa si todavía tiene la contraseña con la que se creó la cuenta.
-            self.controlador.iniciar_sesion(user, fila[1], clave_por_defecto=(pas == "admin"))
+            # Avisa si entró con una contraseña conocida, como la del primer arranque.
+            self.controlador.iniciar_sesion(user, fila[1], clave_insegura=(pas in CLAVES_INSEGURAS))
         else:
             self.password.delete(0, "end")
             self.mostrar_mensaje("Usuario o contraseña incorrectos.")
             self.password.focus_set()
 
 
-class Registro(PantallaAcceso):
-    def widgets(self):
-        etiqueta(self, "Crear cuenta", (FUENTE, 24, "bold"), TEXTO).place(x=610, y=40)
-        etiqueta(self, "Para registrarse necesita el código de autorización.", F_NORMAL, TEXTO_SUAVE).place(x=610, y=86)
-        self.username = self.fila("Usuario", 130)
-        self.password = self.fila("Contraseña (mínimo 6 caracteres)", 206, oculto=True)
-        self.confirmar = self.fila("Confirmar contraseña", 282, oculto=True)
-        self.key = self.fila("Código de autorización", 358, oculto=True)
-        self.mensaje(436)
-        boton(self, "Crear cuenta", self.enviar, "primario", (FUENTE, 12, "bold")).place(x=610, y=478, width=320, height=44)
-        boton(self, "Volver a iniciar sesión", self.volver, "secundario").place(x=610, y=534, width=320, height=40)
-
-    def al_mostrar(self):
-        self.dibujar_marca()
-        for e in (self.username, self.password, self.confirmar, self.key):
-            e.delete(0, "end")
-        self.mostrar_mensaje("")
-        self.username.focus_set()
-
-    def volver(self):
-        self.controlador.show_frame(Login)
-
-    def enviar(self):
-        user = self.username.get().strip()
-        pas = self.password.get()
-        if len(user) < 3:
-            self.mostrar_mensaje("El usuario debe tener al menos 3 caracteres.")
-        elif len(pas) < 6:
-            self.mostrar_mensaje("La contraseña debe tener al menos 6 caracteres.")
-        elif pas != self.confirmar.get():
-            self.mostrar_mensaje("Las contraseñas no coinciden.")
-        elif self.key.get() != ajustes.obtener("codigo_registro"):
-            self.mostrar_mensaje("El código de autorización no es correcto.")
-        else:
-            try:
-                # Las cuentas creadas desde aquí entran como cajeros: el rol de
-                # administrador solo lo da otro administrador, desde Usuarios.
-                db.ejecutar("INSERT INTO usuarios (username, password, rol) VALUES (?, ?, 'cajero')",
-                            (user, hash_password(pas)))
-            except sqlite3.IntegrityError:
-                self.mostrar_mensaje(f"El usuario «{user}» ya existe. Elija otro nombre.")
-                return
-            except sqlite3.Error as e:
-                self.mostrar_mensaje(f"No se pudo crear la cuenta: {e}")
-                return
-            login = self.controlador.frames[Login]
-            self.controlador.show_frame(Login)
-            login.username.delete(0, "end")
-            login.username.insert(0, user)
-            login.password.focus_set()
-            login.mostrar_mensaje(f"Cuenta «{user}» creada. Ya puede iniciar sesión.", error=False)
+# Contraseñas que no deberían quedar en uso. La primera es la del usuario que
+# crea el programa en el primer arranque.
+CLAVES_INSEGURAS = {"admin", "123456", "password", "1234"}

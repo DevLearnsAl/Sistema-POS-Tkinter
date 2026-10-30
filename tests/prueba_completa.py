@@ -142,8 +142,9 @@ shutil.move("base_buena.db", db.DB_NAME)
 
 from manager import Manager
 from container import Container
-from login import Login, Registro
+from login import Login
 from ventas import Ventas
+import caja as mod_caja
 from caja import Caja
 from compras import Compras
 from inventario import Inventario
@@ -196,34 +197,60 @@ check(valor("SELECT COUNT(*) FROM cajas WHERE estado = 'CERRADA'") == 7
       and valor("SELECT COUNT(*) FROM cajas WHERE estado = 'ABIERTA'") == 0,
       "los 7 turnos de ejemplo quedan cerrados")
 
-# ================= LOGIN Y REGISTRO =================
-lg, rg = app.frames[Login], app.frames[Registro]
+# ================= LOGIN =================
+lg = app.frames[Login]
 lg.enviar()
 check("Escriba su usuario" in lg.lbl_mensaje.cget("text"), "login vacío avisa")
 escribir(lg.username, "admin"); escribir(lg.password, "mala"); lg.enviar()
 check("incorrectos" in lg.lbl_mensaje.cget("text") and app.usuario_actual is None, "contraseña mala rechazada")
+check(not hasattr(lg, "link_registro") and valor("SELECT COUNT(*) FROM usuarios") == 1,
+      "no hay registro público: la única cuenta es la que crea el programa")
 
-app.show_frame(Registro)
-for datos, esperado in [(("ab", "123456", "123456", "1234"), "al menos 3"),
-                        (("cajero", "123", "123", "1234"), "al menos 6"),
-                        (("cajero", "123456", "654321", "1234"), "no coinciden"),
-                        (("cajero", "123456", "123456", "9999"), "código"),
-                        (("admin", "123456", "123456", "1234"), "ya existe")]:
-    for e, v in zip((rg.username, rg.password, rg.confirmar, rg.key), datos):
-        escribir(e, v)
-    rg.enviar()
-    check(esperado in rg.lbl_mensaje.cget("text"), f"registro rechaza: {esperado}")
-for e, v in zip((rg.username, rg.password, rg.confirmar, rg.key), ("cajero", "cajero123", "cajero123", "1234")):
-    escribir(e, v)
-rg.enviar()
-check(lg.username.get() == "cajero" and "creada" in lg.lbl_mensaje.cget("text"), "registro válido vuelve al login")
-check(valor("SELECT rol FROM usuarios WHERE username = 'cajero'") == "cajero",
-      "quien se registra entra como cajero, no como administrador")
+# ================= EL ADMINISTRADOR CREA LAS CUENTAS =================
+escribir(lg.username, "admin"); escribir(lg.password, "admin"); lg.enviar()
+check(app.usuario_actual == "admin" and app.es_admin, "el administrador inicia sesión")
+ct = app.frames[Container]
+
+from usuarios import VentanaMiCuenta, VentanaUsuarios
+
+vu = VentanaUsuarios(ct, app)
+vu.nuevo()
+form = ventanas(vu.top)[-1]
+campos_form = entradas_de(form)
+
+
+def crear_usuario(nombre, clave, confirmacion, rol="Cajero"):
+    escribir(campos_form[0], nombre)
+    escribir(campos_form[1], clave)
+    escribir(campos_form[2], confirmacion)
+    next(w for w in recorrer(form) if isinstance(w, ttk.Combobox)).set(rol)
+    boton(form, "Guardar").invoke()
+
+
+for nombre, clave, confirmacion, esperado in [("ab", "cajero123", "cajero123", "al menos 3"),
+                                              ("cajero", "123", "123", "al menos 6"),
+                                              ("cajero", "cajero123", "otra12345", "no coinciden"),
+                                              ("juan perez", "cajero123", "cajero123", "sin espacios"),
+                                              ("ADMIN", "cajero123", "cajero123", "Ya existe"),
+                                              ("admin", "cajero123", "cajero123", "Ya existe")]:
+    crear_usuario(nombre, clave, confirmacion)
+    check(esperado in error_de(form).cget("text"), f"crear usuario rechaza: {esperado}")
+
+crear_usuario("cajero", "cajero123", "cajero123")
+check(valor("SELECT rol FROM usuarios WHERE username = 'cajero'") == "cajero"
+      and valor("SELECT activo FROM usuarios WHERE username = 'cajero'") == 1,
+      "el administrador crea la cuenta del cajero")
+check(verificar_password("cajero123", valor("SELECT password FROM usuarios WHERE username = 'cajero'")),
+      "la cuenta nueva también guarda la contraseña con hash")
+vu.top.destroy()
+
+RESPUESTA["si_no"] = True
+ct.salir()
+check(app.usuario_actual is None, "el administrador cierra sesión")
 
 # ================= PERMISOS DEL CAJERO =================
-escribir(lg.password, "cajero123"); lg.enviar()
-check(app.usuario_actual == "cajero" and app.rol_actual == "cajero", "el usuario nuevo inicia sesión")
-ct = app.frames[Container]
+escribir(lg.username, "cajero"); escribir(lg.password, "cajero123"); lg.enviar()
+check(app.usuario_actual == "cajero" and app.rol_actual == "cajero", "el cajero inicia sesión")
 visibles = {c.__name__ for c in ct.pestanas}
 check(visibles == {"Ventas", "Caja", "Inventario", "Clientes"},
       "el cajero solo ve Ventas, Caja, Inventario y Clientes")
@@ -248,7 +275,7 @@ check(app.usuario_actual is None and app.rol_actual is None, "cerrar sesión")
 escribir(lg.username, "admin"); escribir(lg.password, "admin"); lg.enviar()
 check(app.usuario_actual == "admin" and app.es_admin and "admin" in ct.btn_usuario.cget("text"),
       "admin entra y aparece en la barra")
-check(app.clave_por_defecto, "avisa que admin sigue con la contraseña de fábrica")
+check(app.clave_insegura, "avisa que admin sigue con una contraseña insegura")
 check(len(ct.pestanas) == 7 and ct.atajos[3] is Compras,
       "el administrador ve los 7 módulos y F3 le abre Compras")
 
@@ -320,6 +347,8 @@ agregar("Arroz 1 lb", "0")
 check("mayor que cero" in ultimo(), "cantidad 0 rechazada")
 agregar("xyz123", 1)
 check("No se encontró" in ultimo(), "producto inexistente avisa")
+agregar("1 lb", 1)
+check("productos que coinciden" in ultimo(), "si el texto coincide con varios productos, lo dice")
 
 v.tree.selection_set(v.tree.get_children()[1])
 RESPUESTA["entero"] = 4
@@ -450,6 +479,9 @@ escribir(nombre_e, "Arroz 1 lb"); escribir(precio_e, "20"); escribir(costo_e, "1
 boton(top, "Guardar").invoke()
 error = next(w for w in top.winfo_children() if isinstance(w, tk.Label) and w.cget("fg") == "#B42318")
 check("Ya existe un producto" in error.cget("text"), "nombre repetido rechazado")
+escribir(nombre_e, "ARROZ 1 LB"); boton(top, "Guardar").invoke()
+check("Ya existe un producto llamado «Arroz 1 lb»" in error.cget("text"),
+      "nombre repetido con otras mayúsculas también se rechaza")
 escribir(nombre_e, "Café molido 200 g"); escribir(precio_e, "0"); boton(top, "Guardar").invoke()
 check("mayor que 0" in error.cget("text"), "precio 0 rechazado")
 escribir(precio_e, "95"); escribir(codigo_e, codigo_coca); boton(top, "Guardar").invoke()
@@ -494,6 +526,34 @@ cp.entry_cantidad.set(20); escribir(cp.entry_costo, "26"); cp.registrar()
 check(db.uno("SELECT stock, costo FROM articulos WHERE articulo = 'Frijoles rojos 1 lb'") == (stock_frijoles + 20, 26.0)
       and valor("SELECT COUNT(*) FROM compras WHERE articulo = 'Frijoles rojos 1 lb'") == 1,
       "compra suma stock y actualiza costo")
+check(valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?", (caja_id,)) == 0,
+      "una compra que no se paga de la caja no toca el efectivo")
+
+# Una compra pagada con el efectivo de la caja sí tiene que salir del arqueo.
+check(str(cp.chk_caja.cget("state")) == "normal" and "hay" in cp.chk_caja.cget("text"),
+      "con el turno abierto se ofrece pagar la compra en efectivo")
+efectivo_antes = mod_caja.resumen(caja_id)["esperado"]
+cp.combo_producto.set("Azúcar 1 lb"); cp.mostrar_producto()
+cp.entry_cantidad.set(10); escribir(cp.entry_costo, "13")
+cp.pagar_de_caja.set(True)
+cp.registrar()
+movimientos = q("SELECT tipo, monto, motivo FROM movimientos_caja WHERE caja_id = ?", (caja_id,))
+check(mod_caja.resumen(caja_id)["esperado"] == round(efectivo_antes - 130, 2)
+      and len(movimientos) == 1 and movimientos[0][0] == "SALIDA" and movimientos[0][1] == 130.0
+      and movimientos[0][2].startswith("Compra a "),
+      f"la compra pagada en efectivo sale de la caja (movimientos: {movimientos}, "
+      f"mensaje: {cp.lbl_mensaje.cget('text')!r})")
+check(not cp.pagar_de_caja.get() and "descontaron" in cp.lbl_mensaje.cget("text"),
+      "y el aviso lo dice")
+
+cp.combo_producto.set("Azúcar 1 lb"); cp.mostrar_producto()
+cp.entry_cantidad.set(9999); escribir(cp.entry_costo, "99")
+cp.pagar_de_caja.set(True)
+cp.registrar()
+check("suficiente efectivo" in cp.lbl_mensaje.cget("text")
+      and valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?", (caja_id,)) == 1,
+      "no se puede pagar de la caja más de lo que hay")
+cp.pagar_de_caja.set(False)
 
 # ================= CLIENTES Y PROVEEDORES =================
 cl = ct.frames[Clientes]
@@ -557,8 +617,6 @@ ct.show_frames(Compras)
 check("Snacks del Pacífico" not in cp.proveedores, "un proveedor de baja no aparece al comprar")
 
 # ================= USUARIOS =================
-from usuarios import VentanaMiCuenta, VentanaUsuarios
-
 vu = VentanaUsuarios(ct, app)
 check(len(vu.tree.get_children()) == valor("SELECT COUNT(*) FROM usuarios"), "la lista muestra todos los usuarios")
 
@@ -577,7 +635,7 @@ check(valor("SELECT rol FROM usuarios WHERE username = 'cajero'") == "cajero", "
 elegir_usuario("admin")
 vu.cambiar_rol()
 check(valor("SELECT rol FROM usuarios WHERE username = 'admin'") == "admin"
-      and "único administrador" in vu.lbl_mensaje.cget("text"), "no se puede quitar al único administrador")
+      and "a usted mismo" in vu.lbl_mensaje.cget("text"), "no se puede cambiar el rol de uno mismo")
 elegir_usuario("admin")
 vu.cambiar_estado()
 check(valor("SELECT activo FROM usuarios WHERE username = 'admin'") == 1
@@ -599,7 +657,7 @@ check("no coinciden" in mc.lbl_mensaje.cget("text"), "las contraseñas nuevas de
 escribir(mc.campos["confirmar"], "nueva123")
 mc.confirmar()
 check(verificar_password("nueva123", valor("SELECT password FROM usuarios WHERE username = 'admin'"))
-      and not app.clave_por_defecto, "contraseña cambiada y aviso de clave de fábrica apagado")
+      and not app.clave_insegura, "contraseña cambiada y aviso de clave insegura apagado")
 
 # El usuario desactivado ya no puede entrar.
 db.ejecutar("UPDATE usuarios SET activo = 1, password = ? WHERE username = 'cajero'",
@@ -611,7 +669,7 @@ escribir(lg.username, "cajero"); escribir(lg.password, "cajero123"); lg.enviar()
 check(app.usuario_actual is None and "desactivada" in lg.lbl_mensaje.cget("text"),
       "una cuenta desactivada no puede iniciar sesión")
 escribir(lg.username, "admin"); escribir(lg.password, "nueva123"); lg.enviar()
-check(app.usuario_actual == "admin" and not app.clave_por_defecto, "admin entra con la contraseña nueva")
+check(app.usuario_actual == "admin" and not app.clave_insegura, "admin entra con la contraseña nueva")
 
 # ================= CAJA: MOVIMIENTOS Y CIERRE =================
 ct.show_frames(Caja)
@@ -619,12 +677,18 @@ check(cj.caja_id == caja_id, "sigue abierto el mismo turno")
 datos = cj.valores
 efectivo_bd = valor("SELECT COALESCE(SUM(total), 0) FROM ventas WHERE caja_id = ? AND estado = 'EMITIDA' "
                     "AND metodo_pago = 'Efectivo'", (caja_id,))
-import caja as mod_caja
+entradas_bd = valor("SELECT COALESCE(SUM(monto), 0) FROM movimientos_caja WHERE caja_id = ? AND tipo = 'ENTRADA'",
+                    (caja_id,))
+salidas_bd = valor("SELECT COALESCE(SUM(monto), 0) FROM movimientos_caja WHERE caja_id = ? AND tipo = 'SALIDA'",
+                   (caja_id,))
 r = mod_caja.resumen(caja_id)
-check(abs(r["efectivo"] - efectivo_bd) < 0.005 and r["esperado"] == round(500 + efectivo_bd, 2),
-      "el resumen suma el efectivo del turno")
+check(abs(r["efectivo"] - efectivo_bd) < 0.005
+      and r["esperado"] == round(500 + efectivo_bd + entradas_bd - salidas_bd, 2),
+      "el resumen suma ventas en efectivo, entradas y salidas del turno")
 check(r["tarjeta"] == 0, "la venta con tarjeta anulada no cuenta")
 
+antes = r["esperado"]
+movimientos_antes = valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?", (caja_id,))
 cj.movimiento("ENTRADA")
 top = ventanas(cj)[-1]
 escribir(entradas_de(top)[0], "0")
@@ -632,8 +696,8 @@ boton(top, "Registrar").invoke()
 check("mayor que cero" in error_de(top).cget("text"), "movimiento con monto 0 rechazado")
 escribir(entradas_de(top)[0], "300")
 boton(top, "Registrar").invoke()
-check(valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ? AND tipo = 'ENTRADA'", (caja_id,)) == 1
-      and mod_caja.resumen(caja_id)["esperado"] == round(500 + efectivo_bd + 300, 2), "entrada de efectivo")
+check(valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?", (caja_id,)) == movimientos_antes + 1
+      and mod_caja.resumen(caja_id)["esperado"] == round(antes + 300, 2), "entrada de efectivo")
 
 cj.movimiento("SALIDA")
 top = ventanas(cj)[-1]
@@ -644,8 +708,10 @@ check("más efectivo del que hay" in error_de(top).cget("text"),
 escribir(entradas_de(top)[0], "200")
 boton(top, "Registrar").invoke()
 esperado = mod_caja.resumen(caja_id)["esperado"]
-check(esperado == round(500 + efectivo_bd + 300 - 200, 2), "salida de efectivo")
-check(len(cj.tree_mov.get_children()) == 2, "los movimientos aparecen en la tabla del turno")
+check(esperado == round(antes + 300 - 200, 2), "salida de efectivo")
+check(len(cj.tree_mov.get_children()) == valor("SELECT COUNT(*) FROM movimientos_caja WHERE caja_id = ?",
+                                               (caja_id,)),
+      "los movimientos aparecen en la tabla del turno")
 
 cj.cerrar()
 cierre = ventanas(cj)[-1]
@@ -713,7 +779,6 @@ check(vc.e["negocio_nombre"].get() == "Minimarket" and vc.e["moneda_simbolo"].ge
 for clave, texto, esperado in [("negocio_nombre", "", "nombre del negocio es obligatorio"),
                                ("moneda_simbolo", "", "símbolo de la moneda"),
                                ("impuesto_nombre", "", "nombre del impuesto"),
-                               ("codigo_registro", "12", "al menos 4 caracteres"),
                                ("moneda_decimales", "ocho", "deben ser números"),
                                ("moneda_decimales", "9", "decimales van de 0 a 4"),
                                ("impuesto_tasa", "150", "tasa del impuesto va de 0"),

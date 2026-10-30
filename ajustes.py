@@ -25,7 +25,6 @@ DEFECTOS = {
     "moneda_billetes": "100,200,500,1000",  # botones de pago rápido en el cobro
     "impuesto_nombre": "IVA",
     "impuesto_tasa": "15",                  # tasa general; cada producto es gravado o exento
-    "codigo_registro": "1234",
     "factura_despedida": "¡Gracias por su compra!",
     "factura_nota": "Conserve esta factura como comprobante de su compra.",
 }

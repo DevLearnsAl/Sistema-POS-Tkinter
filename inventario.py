@@ -13,7 +13,7 @@ from PIL import Image, ImageOps, ImageTk
 import ajustes
 import db
 from estilos import (FONDO, BLANCO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, VERDE_FONDO, ROJO, ROJO_FONDO, AMBAR,
-                     AMBAR_FONDO, GRIS_FONDO, CLARO, FUENTE, F_PEQUE, F_NEGRITA, F_SUBTITULO, F_TITULO, moneda,
+                     AMBAR_FONDO, GRIS_FONDO, CLARO, FUENTE, F_PEQUE, F_NEGRITA, F_TITULO, moneda,
                      boton, cambiar_tipo, panel, etiqueta, campo, lista, ventana_modal)
 from utilidades import codigo_interno
 
@@ -372,6 +372,13 @@ class FormularioProducto:
         codigo = v["codigo"] or None
         if codigo and not re.fullmatch(r"[0-9A-Za-z-]{1,20}", codigo):
             self.lbl_error.config(text="El código solo puede tener letras, números y guiones (máximo 20).")
+            return
+        # El UNIQUE de la base distingue mayúsculas, así que «Coca-Cola» y
+        # «coca-cola» pasarían como dos productos distintos. Se revisa aparte.
+        repetido = db.uno("SELECT articulo FROM articulos WHERE LOWER(articulo) = LOWER(?) AND id <> ?",
+                          (v["articulo"], self.producto["id"] if self.producto else -1))
+        if repetido:
+            self.lbl_error.config(text=f"Ya existe un producto llamado «{repetido[0]}».")
             return
         iva = ajustes.tasa_impuesto() if v["iva"] == self.opciones_iva[0] else 0
 

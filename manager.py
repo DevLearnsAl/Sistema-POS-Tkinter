@@ -5,7 +5,7 @@ import ajustes
 import config
 import registro
 from estilos import FONDO, configurar_estilos
-from login import Login, Registro
+from login import Login
 from container import Container
 
 
@@ -16,6 +16,7 @@ class Manager(tk.Tk):
 
     def __init__(self, aviso_inicial=None):
         super().__init__()
+        registro.iniciar()
         # La configuración del negocio se lee una vez, antes de armar las pantallas:
         # varias toman de ahí sus textos (nombre, moneda, nombre del impuesto).
         ajustes.cargar()
@@ -34,12 +35,12 @@ class Manager(tk.Tk):
 
         self.usuario_actual = None
         self.rol_actual = None
-        self.clave_por_defecto = False
+        self.clave_insegura = False
         contenedor = tk.Frame(self, bg=FONDO)
         contenedor.pack(fill="both", expand=True)
 
         self.frames = {}
-        for F in (Login, Registro, Container):
+        for F in (Login, Container):
             self.frames[F] = F(contenedor, self)
 
         self.show_frame(Login)
@@ -76,16 +77,16 @@ class Manager(tk.Tk):
     def es_admin(self):
         return self.rol_actual == "admin"
 
-    def iniciar_sesion(self, usuario, rol="cajero", clave_por_defecto=False):
+    def iniciar_sesion(self, usuario, rol="cajero", clave_insegura=False):
         self.usuario_actual = usuario
         self.rol_actual = rol
-        self.clave_por_defecto = clave_por_defecto
+        self.clave_insegura = clave_insegura
         self.show_frame(Container)
 
     def cerrar_sesion(self):
         self.usuario_actual = None
         self.rol_actual = None
-        self.clave_por_defecto = False
+        self.clave_insegura = False
         self.show_frame(Login)
 
 

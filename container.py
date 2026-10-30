@@ -98,8 +98,8 @@ class Container(tk.Frame):
         rol = "Administrador" if self.controlador.es_admin else "Cajero"
         menu.add_command(label=f"{self.controlador.usuario_actual} · {rol}", state="disabled")
         menu.add_separator()
-        if self.controlador.clave_por_defecto:
-            menu.add_command(label="Cambiar contraseña (está usando la de fábrica)", command=self.mi_cuenta)
+        if self.controlador.clave_insegura:
+            menu.add_command(label="Cambiar contraseña (la actual es insegura)", command=self.mi_cuenta)
         else:
             menu.add_command(label="Mi cuenta", command=self.mi_cuenta)
         if self.controlador.puede("usuarios"):
@@ -161,9 +161,9 @@ class Container(tk.Frame):
         usuario = self.controlador.usuario_actual or ""
         if usuario:
             # El rol va en el menú: en el botón no cabe sin cortar el nombre.
-            aviso = " ⚠" if self.controlador.clave_por_defecto else ""
+            aviso = " ⚠" if self.controlador.clave_insegura else ""
             self.btn_usuario.config(text=f"{usuario}{aviso}  ▾   {datetime.datetime.now():%H:%M}",
-                                    fg=AMBAR if self.controlador.clave_por_defecto else TEXTO_CLARO)
+                                    fg=AMBAR if self.controlador.clave_insegura else TEXTO_CLARO)
         else:
             self.btn_usuario.config(text="")
         if programar:
