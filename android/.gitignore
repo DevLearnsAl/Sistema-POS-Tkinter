@@ -1,0 +1,18 @@
+# Copias que genera preparar.py desde la carpeta del proyecto
+db.py
+crear_bd.py
+ajustes.py
+seguridad.py
+utilidades.py
+factura.py
+registro.py
+config.py
+turnos.py
+cobro.py
+schema.sql
+fotos/
+
+# Resultado de la construccion
+bin/
+.buildozer/
+__pycache__/

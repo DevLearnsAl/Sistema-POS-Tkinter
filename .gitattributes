@@ -1,0 +1,2 @@
+# Los scripts de shell necesitan finales de linea Unix: Windows los rompe
+*.sh text eol=lf
