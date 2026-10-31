@@ -93,6 +93,22 @@ menú de usuario, arriba a la derecha.
 Atajos: **F1** a **F7** cambian de módulo, **Enter** agrega el producto, **F12** cobra y
 **Supr** quita la línea seleccionada.
 
+## Ejecutable para Windows
+
+Para usarlo en una computadora que no tiene Python:
+
+```powershell
+py -m pip install pyinstaller
+py construir_exe.py
+```
+
+Queda en `dist/Minimarket/`. Esa carpeta es portátil: se copia a otra máquina y se abre
+`Minimarket.exe`. Pesa unos 73 MB porque lleva Python y las librerías adentro.
+
+Se arma en modo carpeta y no en un solo archivo a propósito: el programa guarda la base de
+datos, las facturas y los respaldos **junto al .exe**, donde se ven y se pueden copiar. Un
+único archivo los escondería en una carpeta temporal del sistema que Windows borra.
+
 ## Pruebas
 
 ```powershell
@@ -136,6 +152,7 @@ Las facturas anuladas no suman, porque ese dinero se devolvió. Las devoluciones
 | Archivo | Qué hace |
 |---|---|
 | `index.py` | Punto de entrada: prepara la base de datos y abre la aplicación |
+| `rutas.py` | Dónde están los archivos al correr el código y al correr el .exe |
 | `manager.py` | Ventana principal; cambia entre el inicio de sesión y el sistema; guarda el rol |
 | `container.py` | Barra superior con los módulos según el rol, atajos, usuario y hora |
 | `login.py` | Inicio de sesión |
@@ -157,6 +174,7 @@ Las facturas anuladas no suman, porque ese dinero se devolvió. Las devoluciones
 | `schema.sql`, `crear_bd.py` | Esquema, datos de ejemplo, respaldos y migración |
 | `utilidades.py` | Cálculo de IVA, códigos EAN-13 y búsqueda de productos |
 | `tests/` | Prueba completa del sistema |
+| `construir_exe.py` | Arma el ejecutable con PyInstaller |
 | `fotos/`, `imagenes/` | Fotos de productos e ícono de la aplicación |
 
 ### Devoluciones
@@ -208,7 +226,6 @@ pantallas en SVG).
 
 ## Próximas mejoras
 
-- Instalador `.exe` para no depender de que Python esté instalado.
 - Venta al crédito con saldo por cliente y abonos.
 - Descuentos por línea y sobre el total.
 - Guardar el dinero en centavos enteros en lugar de números decimales (`REAL`).

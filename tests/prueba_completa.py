@@ -17,7 +17,8 @@ PROYECTO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COPIA = tempfile.mkdtemp(prefix="minimarket_prueba_")
 shutil.rmtree(COPIA)
 shutil.copytree(PROYECTO, COPIA, ignore=shutil.ignore_patterns(
-    "__pycache__", "database*.db", "facturas", "reportes", "respaldos", ".git", "figma", "tests", "docs"))
+    "__pycache__", "database*.db", "facturas", "reportes", "respaldos", "logs", ".git", "figma", "tests",
+    "docs", "build", "dist"))
 os.chdir(COPIA)
 sys.path.insert(0, COPIA)
 

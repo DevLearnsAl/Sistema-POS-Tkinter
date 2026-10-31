@@ -1,7 +1,7 @@
 """Parámetros del programa.
 
 Acá va lo que es igual en toda instalación. Lo que cambia de un negocio a otro
-(nombre, RUC, logo, moneda, tasa de impuesto, código de registro) está en la
+(nombre, RUC, logo, moneda, tasa de impuesto, textos de la factura) está en la
 base de datos y se edita desde la pantalla de Configuración: ver `ajustes.py`.
 """
 

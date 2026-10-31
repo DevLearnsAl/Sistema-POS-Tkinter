@@ -5,3 +5,6 @@ respaldos/
 database.db
 database_v1_respaldo*.db
 logs/
+build/
+dist/
+*.spec

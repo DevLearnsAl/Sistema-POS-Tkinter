@@ -1,8 +1,9 @@
-import os
+import rutas
 
-# Las rutas (database.db, fotos/, facturas/) son relativas a la carpeta del
-# programa. Con esta línea funciona aunque se ejecute desde otra carpeta.
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# Deja lista la carpeta donde el programa guarda la base, las facturas y los
+# respaldos, y se para en ella: así el resto del código usa rutas relativas,
+# tanto corriendo el código como desde el .exe.
+rutas.preparar()
 
 import crear_bd
 import registro
