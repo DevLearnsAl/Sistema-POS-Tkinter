@@ -48,56 +48,66 @@ usuario, no junto al código.
 
 ## Armar el APK
 
-Buildozer solo corre en Linux. En Windows se usa WSL, que ya viene con el sistema:
+Buildozer solo corre en Linux. En Windows se usa WSL, que ya viene con el sistema.
+
+Una sola vez, dentro de Ubuntu:
+
+```bash
+sudo apt install -y python3-pip python3-venv openjdk-17-jdk git zip unzip     autoconf libtool pkg-config zlib1g-dev libncurses-dev cmake libffi-dev libssl-dev
+```
+
+Después, desde PowerShell, cada vez que se quiera armar el APK:
 
 ```powershell
-wsl -d Ubuntu
+wsl -d Ubuntu -- bash "/mnt/c/Users/TU_USUARIO/Documents/Minimarket referencia/android/construir_apk.sh"
 ```
 
-Y dentro de Ubuntu, una sola vez:
-
-```bash
-sudo apt install -y python3-pip python3-venv openjdk-17-jdk git zip unzip \
-    autoconf libtool pkg-config zlib1g-dev libncurses-dev cmake libffi-dev libssl-dev
-python3 -m venv ~/venv-buildozer
-~/venv-buildozer/bin/pip install buildozer cython
-```
-
-Después, cada vez que se quiera armar el APK:
-
-```bash
-cp -r "/mnt/c/Users/TU_USUARIO/Documents/Minimarket referencia/android" ~/minimarket-android
-cd ~/minimarket-android
-~/venv-buildozer/bin/buildozer android debug
-```
-
-Se copia a la carpeta de Linux a propósito: construir sobre `/mnt/c` es mucho más lento.
+El script hace el resto: instala las herramientas en la versión que corresponde, copia el
+proyecto a la carpeta de Linux (construir sobre `/mnt/c` es mucho más lento), limpia los
+restos de construcciones anteriores y arma el APK. El registro completo queda en
+`~/minimarket-android/construccion.log`; cuando algo falla, el motivo suele estar a cientos
+de líneas del final.
 
 **La primera vez tarda entre 30 y 90 minutos** y descarga unos 2 GB: el SDK de Android, el
 NDK y las herramientas que compilan Python para el teléfono. Las veces siguientes son
 minutos.
 
-El APK queda en `bin/minimarket-5.0-arm64-v8a-debug.apk`.
+El APK queda en `~/minimarket-android/bin/minimarket-5.0-arm64-v8a-debug.apk` y pesa 20 MB.
+
+### Por qué se fijan versiones viejas
+
+Las herramientas de Android van por detrás de lo que traen los sistemas nuevos, y hay tres
+cosas que sujetar para que la construcción llegue al final:
+
+- **python-for-android en `v2024.01.21`** (en `buildozer.spec`). La versión actual compila
+  Python 3.14 para el teléfono, y para esa versión PyPI publica paquetes precompilados de
+  Android que las propias herramientas eligen pero después no saben instalar.
+- **Buildozer 1.5.0**, que es la que combina con esa versión de python-for-android.
+- **Python 3.11** para correr buildozer, instalado con `uv`. Ubuntu 26.04 trae 3.14, que
+  las herramientas de Android todavía no soportan.
+
+Aparte, el script resuelve dos tropiezos del entorno nuevo, los dos en la receta de
+`libjpeg`: su `CMakeLists` pide una versión mínima que CMake 4 ya no acepta, y empieza
+borrando restos con `rm -f`, que no sirve para carpetas, así que una construcción cortada a
+la mitad la deja trabada. Está explicado en los comentarios del script.
 
 ## Instalarlo en el teléfono
 
-Con el teléfono conectado por USB y la depuración USB activada:
+Copiar el `.apk` al teléfono y abrirlo. Android pide permiso para instalar de orígenes
+desconocidos; hay que dárselo.
+
+Con el teléfono conectado por USB y la depuración USB activada también se puede:
 
 ```bash
-~/venv-buildozer/bin/buildozer android deploy run
+cd ~/minimarket-android && python3.11 -m buildozer android deploy run
 ```
 
-O copiando el `.apk` al teléfono y abriéndolo (hay que permitir instalar de orígenes
-desconocidos).
+## La factura en PDF
 
-## Si falla la construcción de ReportLab
+Es lo único que falta en el teléfono. ReportLab, la librería que la genera, descarga su
+código de `hg.reportlab.com` al compilarse para Android, y ese servidor hoy responde 403.
+Por eso quedó fuera de `requirements` en `buildozer.spec`.
 
-ReportLab es lo único que puede dar problemas, porque tiene partes en C. Si el APK no se
-arma por eso, quitalo de `requirements` en `buildozer.spec`:
-
-```
-requirements = python3,kivy==2.3.1,pillow
-```
-
-La aplicación sigue funcionando: la venta se guarda igual y avisa que no pudo generar el
-PDF. La factura se puede imprimir después desde la computadora, que usa la misma base.
+La aplicación está preparada: la venta se guarda igual y avisa que no pudo generar el PDF.
+La factura se puede imprimir después desde la computadora, que usa la misma base. Para
+volver a intentarlo, alcanza con agregar `reportlab` de nuevo a `requirements`.
