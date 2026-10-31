@@ -109,6 +109,35 @@ Se arma en modo carpeta y no en un solo archivo a propósito: el programa guarda
 datos, las facturas y los respaldos **junto al .exe**, donde se ven y se pueden copiar. Un
 único archivo los escondería en una carpeta temporal del sistema que Windows borra.
 
+## Versión para Android
+
+En `android/` está la misma aplicación para teléfono, hecha con Kivy: acceso, venta,
+caja e inventario.
+
+No es un programa aparte. Las reglas del negocio —base de datos, migraciones, impuestos,
+contraseñas, turnos, cobro y factura en PDF— son **los mismos diez módulos** del
+escritorio; `preparar.py` los copia a esa carpeta antes de construir, porque el APK
+empaqueta un solo directorio. Lo único propio de Android son las pantallas.
+
+Eso es posible porque ningún módulo de las capas de lógica y datos importa Tkinter. Una
+corrección en el cobro arregla las dos aplicaciones a la vez.
+
+Falta una cosa en el teléfono: la factura en PDF. La librería que la genera no se puede
+compilar hoy para Android, así que la venta se guarda igual y la aplicación avisa que no
+pudo armar el PDF.
+
+Para probarla en la computadora:
+
+```powershell
+py -m pip install kivy
+cd android
+py preparar.py
+py main.py
+```
+
+El APK se arma desde WSL, con las herramientas de Android. Los pasos y lo que hace falta
+instalar están en [android/LEEME.md](android/LEEME.md).
+
 ## Pruebas
 
 ```powershell
@@ -157,7 +186,9 @@ Las facturas anuladas no suman, porque ese dinero se devolvió. Las devoluciones
 | `container.py` | Barra superior con los módulos según el rol, atajos, usuario y hora |
 | `login.py` | Inicio de sesión |
 | `ventas.py` | Carrito, cobro, venta registrada, historial y anulación |
+| `cobro.py` | Registra la venta entera en una transacción: factura, stock y caja |
 | `caja.py` | Turnos de caja, movimientos de efectivo y cierre con arqueo |
+| `turnos.py` | Abre, mueve y cierra el turno; calcula el arqueo |
 | `factura.py` | Factura en PDF (varias páginas y sello de anulada) |
 | `compras.py` | Entrada de mercadería |
 | `inventario.py` | Tarjetas de productos, detalle, formulario y exportación |
@@ -176,6 +207,7 @@ Las facturas anuladas no suman, porque ese dinero se devolvió. Las devoluciones
 | `tests/` | Prueba completa del sistema |
 | `construir_exe.py` | Arma el ejecutable con PyInstaller |
 | `fotos/`, `imagenes/` | Fotos de productos e ícono de la aplicación |
+| `android/` | La misma aplicación para teléfono, en Kivy |
 
 ### Devoluciones
 
