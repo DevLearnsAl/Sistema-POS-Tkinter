@@ -1,66 +1,21 @@
-"""Arqueo de caja: turnos, movimientos de efectivo y cierre con conteo.
+"""Pantalla de arqueo de caja.
 
-Un turno se abre con el dinero con el que arranca la caja. Durante el turno se
-suman las ventas en efectivo y los movimientos (entradas y salidas que no son
-ventas). Al cerrar, el cajero cuenta el efectivo y el sistema compara:
-
-    esperado  = monto inicial + ventas en efectivo + entradas - salidas
-    diferencia = contado - esperado       (negativo = falta, positivo = sobra)
-
-Las facturas anuladas no suman, porque ese dinero se devolvió.
+La lógica (abrir, movimientos, resumen y cierre) vive en `turnos.py`, sin
+interfaz, para que la versión de Android use exactamente la misma. Acá queda
+solo lo que se ve y se toca.
 """
-import datetime
 import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox
 
 import ajustes
 import db
+import turnos
 from estilos import (FONDO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, ROJO, AMBAR, FUENTE, F_PEQUE, F_NORMAL,
                      F_NEGRITA, F_SUBTITULO, F_TITULO, F_GRANDE, moneda, boton, panel, etiqueta, campo,
                      lista, tabla, llenar_tabla, ventana_modal)
+from turnos import abrir_turno, caja_abierta, resumen   # las usan ventas.py y compras.py
 from utilidades import fecha_corta
-
-
-def caja_abierta():
-    """El turno abierto, o None. Solo puede haber uno (índice único en el esquema)."""
-    return db.uno("SELECT id, usuario, fecha_apertura, hora_apertura, monto_inicial FROM cajas "
-                  "WHERE estado = 'ABIERTA'")
-
-
-def resumen(caja_id):
-    """Cuánto debería haber en la caja de este turno y de dónde viene."""
-    efectivo, tarjeta, facturas = db.uno(
-        "SELECT COALESCE(SUM(CASE WHEN metodo_pago = 'Efectivo' THEN total ELSE 0 END), 0), "
-        "       COALESCE(SUM(CASE WHEN metodo_pago = 'Tarjeta'  THEN total ELSE 0 END), 0), "
-        "       COUNT(DISTINCT factura) "
-        "FROM ventas WHERE caja_id = ? AND estado = 'EMITIDA'", (caja_id,))
-    entradas, salidas = db.uno(
-        "SELECT COALESCE(SUM(CASE WHEN tipo = 'ENTRADA' THEN monto ELSE 0 END), 0), "
-        "       COALESCE(SUM(CASE WHEN tipo = 'SALIDA'  THEN monto ELSE 0 END), 0) "
-        "FROM movimientos_caja WHERE caja_id = ?", (caja_id,))
-    inicial = db.uno("SELECT monto_inicial FROM cajas WHERE id = ?", (caja_id,))[0]
-    return {"inicial": inicial, "efectivo": efectivo, "tarjeta": tarjeta, "facturas": facturas,
-            "entradas": entradas, "salidas": salidas,
-            "esperado": round(inicial + efectivo + entradas - salidas, 2)}
-
-
-def abrir_turno(usuario, monto_inicial):
-    """Abre un turno. Devuelve el id, o lanza ValueError si ya hay uno abierto."""
-    ahora = datetime.datetime.now()
-    try:
-        with db.conectar() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            if conn.execute("SELECT 1 FROM cajas WHERE estado = 'ABIERTA'").fetchone():
-                raise ValueError("Ya hay un turno de caja abierto.")
-            cur = conn.execute(
-                "INSERT INTO cajas (usuario, fecha_apertura, hora_apertura, monto_inicial, estado) "
-                "VALUES (?, ?, ?, ?, 'ABIERTA')",
-                (usuario, ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M:%S"), monto_inicial))
-            return cur.lastrowid
-    except sqlite3.IntegrityError:
-        # El índice único idx_caja_abierta lo impide aunque dos cajas lo intenten a la vez.
-        raise ValueError("Ya hay un turno de caja abierto.")
 
 
 class Caja(tk.Frame):
@@ -166,13 +121,8 @@ class Caja(tk.Frame):
             llenar_tabla(self.tree_mov, [])
 
         # El cajero ve sus propios arqueos; el administrador ve los de todos.
-        sql = ("SELECT fecha_cierre, usuario, esperado, monto_contado, diferencia FROM cajas "
-               "WHERE estado = 'CERRADA'")
-        parametros = []
-        if not self.controlador.puede("ver_todas_las_cajas"):
-            sql += " AND usuario = ?"
-            parametros.append(self.controlador.usuario_actual)
-        filas = db.consultar(sql + " ORDER BY id DESC LIMIT 100", parametros)
+        solo_mios = None if self.controlador.puede("ver_todas_las_cajas") else self.controlador.usuario_actual
+        filas = turnos.arqueos(solo_mios)
         llenar_tabla(self.tree_hist,
                      [(fecha_corta(f[0]), f[1], moneda(f[2]), moneda(f[3]), moneda(f[4])) for f in filas],
                      lambda f: ["alerta"] if f[4] != moneda(0) else [])
@@ -288,15 +238,12 @@ class VentanaMovimiento:
         if not motivo:
             self.lbl_error.config(text="Escriba el motivo.")
             return
-        if self.tipo == "SALIDA" and monto > resumen(self.caja.caja_id)["esperado"]:
-            self.lbl_error.config(text="No puede sacar más efectivo del que hay en la caja.")
-            return
-        ahora = datetime.datetime.now()
         try:
-            db.ejecutar("INSERT INTO movimientos_caja (caja_id, tipo, monto, motivo, fecha, hora, usuario) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (self.caja.caja_id, self.tipo, monto, motivo, ahora.strftime("%Y-%m-%d"),
-                         ahora.strftime("%H:%M:%S"), self.caja.controlador.usuario_actual))
+            turnos.registrar_movimiento(self.caja.caja_id, self.tipo, monto, motivo,
+                                        self.caja.controlador.usuario_actual)
+        except ValueError as e:
+            self.lbl_error.config(text=str(e))
+            return
         except sqlite3.Error as e:
             self.lbl_error.config(text=f"No se pudo registrar: {e}")
             return
@@ -380,23 +327,16 @@ class VentanaCerrarCaja:
                 "¿Cerrar el turno de todos modos? El arqueo queda guardado con esa diferencia.",
                 parent=self.top):
             return
-        ahora = datetime.datetime.now()
         try:
-            with db.conectar() as conn:
-                cur = conn.execute(
-                    "UPDATE cajas SET fecha_cierre = ?, hora_cierre = ?, usuario_cierre = ?, esperado = ?, "
-                    "monto_contado = ?, diferencia = ?, observacion = ?, estado = 'CERRADA' "
-                    "WHERE id = ? AND estado = 'ABIERTA'",
-                    (ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M:%S"),
-                     self.caja.controlador.usuario_actual, self.datos["esperado"], contado, diferencia,
-                     self.entry_obs.get().strip() or None, self.caja.caja_id))
-                # Si no actualizó ninguna fila, el turno ya estaba cerrado.
-                if cur.rowcount == 0:
-                    self.lbl_error.config(text="Ese turno ya está cerrado. Actualizá la pantalla.")
-                    return
+            arqueo = turnos.cerrar_turno(self.caja.caja_id, self.caja.controlador.usuario_actual, contado,
+                                         self.entry_obs.get().strip() or None)
+        except turnos.TurnoCerrado:
+            self.lbl_error.config(text="Ese turno ya está cerrado. Actualizá la pantalla.")
+            return
         except sqlite3.Error as e:
             self.lbl_error.config(text=f"No se pudo cerrar la caja: {e}")
             return
+        diferencia = arqueo["diferencia"]
         self.top.destroy()
         self.caja.refrescar()
         messagebox.showinfo("Caja cerrada",

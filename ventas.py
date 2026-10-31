@@ -5,6 +5,7 @@ from tkinter import ttk, messagebox, simpledialog
 
 import ajustes
 import caja
+import cobro
 import db
 import factura
 from estilos import (FONDO, BLANCO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, VERDE_FONDO, ROJO, FUENTE, F_NORMAL,
@@ -14,17 +15,6 @@ from utilidades import buscar_producto, calcular_linea, fecha_corta
 
 TECLAS_NAVEGACION = {"Return", "KP_Enter", "Up", "Down", "Left", "Right", "Escape", "Tab", "Shift_L",
                      "Shift_R", "Control_L", "Control_R", "Alt_L", "F12"}
-
-
-class StockInsuficiente(Exception):
-    def __init__(self, articulo, disponible):
-        super().__init__(articulo)
-        self.articulo = articulo
-        self.disponible = disponible
-
-
-class CajaCerrada(Exception):
-    """El turno se cerró entre que se abrió el cobro y se confirmó el pago."""
 
 
 class Ventas(tk.Frame):
@@ -365,42 +355,15 @@ class Ventas(tk.Frame):
             return None
         usuario = self.controlador.usuario_actual or "—"
         cliente = self.entry_cliente.get().strip() or "Consumidor final"
-        ahora = datetime.datetime.now()
-        fecha, hora = ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M:%S")
         t = self.totales()
         try:
-            with db.conectar() as conn:
-                # BEGIN IMMEDIATE bloquea la base mientras se asigna el número y se descuenta
-                # el stock: dos cajas no pueden sacar el mismo número de factura.
-                conn.execute("BEGIN IMMEDIATE")
-                # El turno se vuelve a leer adentro de la transacción: pudo cerrarse
-                # mientras la ventana de cobro estaba abierta.
-                fila_caja = conn.execute("SELECT id FROM cajas WHERE estado = 'ABIERTA'").fetchone()
-                if fila_caja is None:
-                    raise CajaCerrada
-                caja_id = fila_caja[0]
-                for l in self.carrito:
-                    fila = conn.execute("SELECT stock, estado FROM articulos WHERE articulo = ?",
-                                        (l["articulo"],)).fetchone()
-                    if fila is None or fila[1] != "Activo" or fila[0] < l["cantidad"]:
-                        raise StockInsuficiente(l["articulo"], fila[0] if fila else 0)
-                numero = conn.execute("SELECT COALESCE(MAX(factura), 0) + 1 FROM ventas").fetchone()[0]
-                for l in self.carrito:
-                    conn.execute(
-                        "INSERT INTO ventas (factura, cliente, codigo, articulo, precio, cantidad, total, iva, costo, "
-                        "fecha, hora, usuario, caja_id, metodo_pago, recibido, estado) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'EMITIDA')",
-                        (numero, cliente, l["codigo"], l["articulo"], l["precio"], l["cantidad"], l["total"],
-                         l["iva"], round(l["costo"] * l["cantidad"], 2), fecha, hora, usuario, caja_id, metodo,
-                         recibido))
-                    conn.execute("UPDATE articulos SET stock = stock - ? WHERE articulo = ?",
-                                 (l["cantidad"], l["articulo"]))
-        except CajaCerrada:
+            numero, _, fecha, hora = cobro.registrar_venta(self.carrito, cliente, usuario, metodo, recibido)
+        except cobro.CajaCerrada:
             messagebox.showwarning("Caja cerrada", "El turno de caja se cerró. Abrí la caja para poder cobrar.\n"
                                                    "La venta no se guardó.", parent=self)
             self.actualizar_caja()
             return None
-        except StockInsuficiente as e:
+        except cobro.StockInsuficiente as e:
             messagebox.showwarning("Stock insuficiente",
                                    f"No hay suficiente «{e.articulo}» (disponible: {e.disponible}).\n"
                                    "La venta no se guardó. Revise las cantidades.", parent=self)
