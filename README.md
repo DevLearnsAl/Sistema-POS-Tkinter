@@ -138,6 +138,32 @@ py main.py
 El APK se arma desde WSL, con las herramientas de Android. Los pasos y lo que hace falta
 instalar están en [android/LEEME.md](android/LEEME.md).
 
+## Sincronización con Firebase (opcional)
+
+El sistema puede copiar las ventas y los arqueos a **Cloud Firestore**, para verlos desde
+otro lado y tener un respaldo fuera del equipo. Viene apagada; se enciende desde el menú
+de usuario → **Sincronización con la nube**.
+
+**Firebase no reemplaza a SQLite.** La base local sigue siendo la que manda, por dos
+razones: un punto de venta tiene que poder cobrar sin internet, y las reglas que impiden
+vender sin existencias o dejar media venta guardada están en el esquema y en transacciones
+`BEGIN IMMEDIATE`, que Firestore no tiene. La nube entra como una capa de copia encima.
+
+Cómo funciona:
+
+1. Al cobrar una venta o cerrar un turno se escribe una fila en `cola_nube` **dentro de la
+   misma transacción**. Si la venta no se guarda tampoco queda encolada, y si se guarda
+   queda encolada seguro.
+2. Un hilo en segundo plano vacía la cola cada minuto. Sin internet, la cola espera.
+3. Si una factura se anula o se devuelve, se vuelve a encolar y se sobrescribe en la nube.
+
+Usa la **API REST** de Firebase con `urllib`, no el SDK: el SDK arrastra `grpc`, que es
+código C y no compila para Android con python-for-android. Así el mismo módulo sirve en
+las dos versiones y el proyecto no suma dependencias.
+
+Los pasos para crear el proyecto, las credenciales y las reglas de seguridad están en
+[docs/Firebase.md](docs/Firebase.md).
+
 ## Pruebas
 
 ```powershell
@@ -151,6 +177,16 @@ impuesto, cobro en efectivo y tarjeta, stock insuficiente, devoluciones, anulaci
 inventario, compras
 pagadas de la caja, clientes, proveedores, reportes, configuración del negocio y registro de
 errores.
+
+```powershell
+py tests/prueba_nube.py
+```
+
+Comprueba 42 casos de la sincronización con Firebase contra un servidor local que imita su
+API: que la venta se encole dentro de la transacción, que sin internet nada se pierda y se
+pueda seguir cobrando, que el token se renueve al vencer, que una factura anulada se
+sobrescriba en la nube y que un documento rechazado no frene a los demás. No toca Firebase
+de verdad ni necesita credenciales.
 
 ## Cómo funciona
 
@@ -197,6 +233,8 @@ Las facturas anuladas no suman, porque ese dinero se devolvió. Las devoluciones
 | `usuarios.py` | Mi cuenta y administración de usuarios |
 | `configuracion.py` | Pantalla de configuración del negocio |
 | `ajustes.py` | Lee y guarda esa configuración; moneda e impuesto |
+| `nube.py` | Cola y envío a Firebase; sin interfaz, compartido con Android |
+| `nube_pantalla.py` | Pantalla para encender la sincronización |
 | `estilos.py` | Colores, fuentes y widgets comunes |
 | `db.py` | Conexión a la base: cierra siempre y deshace si hay error |
 | `seguridad.py` | Hash de contraseñas |
@@ -234,8 +272,8 @@ otro nombre, otra moneda y otro impuesto (ITBMS 7 % en lugar de IVA 15 %).
 
 ### Base de datos
 
-Nueve tablas en SQLite: `usuarios`, `articulos`, `ventas`, `clientes`, `proveedores`,
-`compras`, `cajas`, `movimientos_caja` y `configuracion`. Las reglas de negocio están en el
+Diez tablas en SQLite: `usuarios`, `articulos`, `ventas`, `clientes`, `proveedores`,
+`compras`, `cajas`, `movimientos_caja`, `configuracion` y `cola_nube`. Las reglas de negocio están en el
 propio esquema: nombres y códigos de barras únicos, cédula y RUC únicos, precio mayor que
 cero, tasa de impuesto entre 0 y 99,99, stock que nunca puede quedar negativo, y un índice
 único parcial que impide **dos turnos de caja abiertos a la vez**.

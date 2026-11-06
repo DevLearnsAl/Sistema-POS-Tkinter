@@ -8,6 +8,7 @@ import caja
 import cobro
 import db
 import factura
+import nube
 from estilos import (FONDO, BLANCO, BORDE, NAVY, TEXTO, TEXTO_SUAVE, VERDE, VERDE_FONDO, ROJO, FUENTE, F_NORMAL,
                      F_PEQUE, F_NEGRITA, F_SUBTITULO, F_TITULO, F_GRANDE, F_CAMPO, moneda, boton, cambiar_tipo,
                      panel, etiqueta, campo, lista, tabla, llenar_tabla, ventana_modal)
@@ -702,6 +703,7 @@ class HistorialVentas:
                 lineas = conn.execute("SELECT codigo, articulo, cantidad FROM ventas "
                                       "WHERE factura = ? AND estado = 'EMITIDA'", (numero,)).fetchall()
                 conn.execute("UPDATE ventas SET estado = 'ANULADA' WHERE factura = ?", (numero,))
+                nube.encolar_factura(conn, numero)
                 for codigo, articulo, cantidad in lineas:
                     # Se busca por código y, si el producto no tiene, por nombre.
                     conn.execute("UPDATE articulos SET stock = stock + ? "
@@ -877,6 +879,7 @@ class VentanaDevolucion:
                                      (self.numero,)).fetchone()[0]
                 if queda == 0:
                     conn.execute("UPDATE ventas SET estado = 'ANULADA' WHERE factura = ?", (self.numero,))
+                nube.encolar_factura(conn, self.numero)
         except (sqlite3.Error, ValueError) as e:
             self.lbl_error.config(text=f"No se pudo registrar la devolución: {e}")
             return

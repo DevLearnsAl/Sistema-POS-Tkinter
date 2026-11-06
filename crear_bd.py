@@ -18,7 +18,7 @@ from db import DB_NAME
 from seguridad import hash_password
 from utilidades import calcular_linea, codigo_interno
 
-VERSION_ESQUEMA = 5
+VERSION_ESQUEMA = 6
 
 # (nombre, precio, costo, stock, stock mínimo, IVA %, estado, foto)
 # Precios al público en córdobas, IVA incluido. Los productos de la canasta
@@ -263,9 +263,17 @@ def _migrar_a_v5(conn):
     conn.execute("ALTER TABLE ventas_nueva RENAME TO ventas")
 
 
+def _migrar_a_v6(conn):
+    """Suma la cola de sincronización con la nube.
+
+    No hay datos que mover: la tabla la crea schema.sql, que corre después de
+    los pasos. La sincronización arranca apagada, así una base que se actualiza
+    no empieza a subir nada sin que el administrador lo pida."""
+
+
 def migrar(desde):
     """Lleva la base de su versión a la actual, paso por paso."""
-    pasos = {3: _migrar_a_v3, 4: _migrar_a_v4, 5: _migrar_a_v5}
+    pasos = {3: _migrar_a_v3, 4: _migrar_a_v4, 5: _migrar_a_v5, 6: _migrar_a_v6}
     conn = sqlite3.connect(DB_NAME)
     try:
         for version in range(desde + 1, VERSION_ESQUEMA + 1):

@@ -5,7 +5,9 @@ import rutas
 # tanto corriendo el código como desde el .exe.
 rutas.preparar()
 
+import ajustes
 import crear_bd
+import nube
 import registro
 from manager import Manager
 
@@ -16,5 +18,12 @@ if __name__ == "__main__":
     except Exception as e:
         registro.error("No se pudo preparar la base de datos", e)
         raise
+    # Si la sincronización con Firebase está encendida, un hilo en segundo
+    # plano va vaciando la cola. Con la sincronización apagada no hace nada.
+    ajustes.cargar()
+    nube.iniciar()
     app = Manager(aviso_inicial=aviso)
-    app.mainloop()
+    try:
+        app.mainloop()
+    finally:
+        nube.detener()

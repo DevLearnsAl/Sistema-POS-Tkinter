@@ -27,6 +27,15 @@ DEFECTOS = {
     "impuesto_tasa": "15",                  # tasa general; cada producto es gravado o exento
     "factura_despedida": "¡Gracias por su compra!",
     "factura_nota": "Conserve esta factura como comprobante de su compra.",
+    # Sincronización con Firebase. Apagada mientras no se llenen los datos desde
+    # la pantalla de Configuración. La clave de API de Firebase no es un secreto
+    # (va en cualquier aplicación web); lo que protege los datos son las reglas
+    # de seguridad y la cuenta de abajo.
+    "nube_activa": "0",
+    "nube_proyecto": "",                    # ID del proyecto en Firebase
+    "nube_api_key": "",                     # clave web de la configuración del proyecto
+    "nube_usuario": "",                     # correo de la cuenta que escribe en Firestore
+    "nube_clave": "",                       # su contraseña
 }
 
 _valores = dict(DEFECTOS)

@@ -11,6 +11,7 @@ factura ni vender la misma última unidad.
 import datetime
 
 import db
+import nube
 
 
 class StockInsuficiente(Exception):
@@ -62,4 +63,7 @@ def registrar_venta(carrito, cliente, usuario, metodo, recibido):
                  usuario, caja_id, metodo, recibido))
             conn.execute("UPDATE articulos SET stock = stock - ? WHERE articulo = ?",
                          (linea["cantidad"], linea["articulo"]))
+        # Va adentro de la transacción a propósito: si la venta no se guarda
+        # tampoco queda encolada, y si se guarda queda encolada seguro.
+        nube.encolar_factura(conn, numero)
     return numero, caja_id, fecha, hora

@@ -124,4 +124,20 @@ CREATE TABLE IF NOT EXISTS compras (
     usuario    TEXT
 );
 
-PRAGMA user_version = 5;
+-- Cola de sincronización con Firebase. La base local manda: acá solo se anota
+-- qué documentos falta copiar a la nube. Se escribe dentro de la misma
+-- transacción que guarda la venta o el arqueo, así nunca queda uno sin el otro.
+-- El par (coleccion, documento) es único: si una factura cambia (se anula o se
+-- devuelve), se reemplaza la fila en vez de encolar una versión más.
+CREATE TABLE IF NOT EXISTS cola_nube (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    coleccion     TEXT NOT NULL,
+    documento     TEXT NOT NULL,
+    datos         TEXT NOT NULL,              -- el documento ya armado, en JSON
+    creado        TEXT NOT NULL,
+    intentos      INTEGER NOT NULL DEFAULT 0 CHECK (intentos >= 0),
+    ultimo_error  TEXT,
+    UNIQUE (coleccion, documento)
+);
+
+PRAGMA user_version = 6;

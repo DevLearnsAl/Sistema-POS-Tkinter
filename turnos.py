@@ -15,6 +15,7 @@ import datetime
 import sqlite3
 
 import db
+import nube
 
 
 class TurnoCerrado(Exception):
@@ -95,6 +96,7 @@ def cerrar_turno(caja_id, usuario, contado, observacion=None):
              round(contado, 2), diferencia, observacion, caja_id))
         if cur.rowcount == 0:
             raise TurnoCerrado("Ese turno ya está cerrado.")
+        nube.encolar_arqueo(conn, caja_id)
     return {"esperado": esperado, "contado": round(contado, 2), "diferencia": diferencia}
 
 

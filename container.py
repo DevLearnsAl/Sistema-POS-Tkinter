@@ -4,6 +4,7 @@ from tkinter import messagebox
 
 import ajustes
 from configuracion import VentanaConfiguracion
+from nube_pantalla import VentanaNube
 from estilos import FONDO, NAVY, NAVY_HOVER, BLANCO, AMBAR, TEXTO_CLARO, FUENTE, F_NEGRITA, F_PEQUE
 from ventas import Ventas
 from caja import Caja
@@ -106,6 +107,7 @@ class Container(tk.Frame):
             menu.add_command(label="Usuarios", command=self.gestionar_usuarios)
         if self.controlador.puede("configuracion"):
             menu.add_command(label="Configuración", command=self.configurar)
+            menu.add_command(label="Sincronización con la nube", command=self.configurar_nube)
         menu.add_separator()
         menu.add_command(label="Cerrar sesión", command=self.salir)
         x = self.btn_usuario.winfo_rootx()
@@ -121,6 +123,10 @@ class Container(tk.Frame):
     def gestionar_usuarios(self):
         if self.controlador.puede("usuarios"):
             VentanaUsuarios(self, self.controlador)
+
+    def configurar_nube(self):
+        if self.controlador.puede("configuracion"):
+            VentanaNube(self, self.controlador)
 
     def configurar(self):
         if self.controlador.puede("configuracion"):

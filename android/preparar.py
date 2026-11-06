@@ -18,7 +18,8 @@ PROYECTO = os.path.dirname(AQUI)
 
 # Módulos sin interfaz: funcionan igual en la computadora y en el teléfono.
 MODULOS = ["db.py", "crear_bd.py", "ajustes.py", "seguridad.py", "utilidades.py",
-           "factura.py", "registro.py", "config.py", "turnos.py", "cobro.py"]
+           "factura.py", "registro.py", "config.py", "turnos.py", "cobro.py",
+           "nube.py"]
 ARCHIVOS = ["schema.sql"]
 CARPETAS = ["fotos"]
 

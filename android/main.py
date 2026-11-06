@@ -93,10 +93,13 @@ class MinimarketApp(App):
         Window.softinput_mode = "below_target"
 
         almacenamiento.preparar(self.user_data_dir)
-        import crear_bd, ajustes, registro
+        import crear_bd, ajustes, nube, registro
         registro.iniciar()
         crear_bd.preparar_base()
         ajustes.cargar()
+        # La misma sincronización con Firebase que en la computadora. Si está
+        # apagada no hace nada; se enciende desde la versión de escritorio.
+        nube.iniciar()
 
         from pantallas.acceso import PantallaLogin
         from pantallas.caja import PantallaCaja

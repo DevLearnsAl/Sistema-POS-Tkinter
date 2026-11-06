@@ -9,6 +9,7 @@ registro.py
 config.py
 turnos.py
 cobro.py
+nube.py
 schema.sql
 fotos/
 
