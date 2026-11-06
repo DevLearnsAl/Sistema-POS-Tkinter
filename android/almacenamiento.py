@@ -21,11 +21,14 @@ def preparar(carpeta_datos):
     origen = os.path.dirname(os.path.abspath(__file__))
     os.makedirs(carpeta_datos, exist_ok=True)
 
+    # Se sobrescriben siempre, no solo la primera vez: vienen dentro del APK y
+    # no son datos del usuario. Si solo se copiaran cuando faltan, al instalar
+    # una versión nueva la aplicación seguiría usando el schema.sql viejo y la
+    # base nunca se migraría.
     for archivo in ARCHIVOS:
-        destino = os.path.join(carpeta_datos, archivo)
         fuente = os.path.join(origen, archivo)
-        if os.path.exists(fuente) and not os.path.exists(destino):
-            shutil.copyfile(fuente, destino)
+        if os.path.exists(fuente):
+            shutil.copyfile(fuente, os.path.join(carpeta_datos, archivo))
 
     for carpeta in CARPETAS:
         fuente = os.path.join(origen, carpeta)
